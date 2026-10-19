@@ -1,0 +1,43 @@
+services:
+  - type: web
+    name: dlfr-api
+    runtime: python
+    plan: free
+    region: singapore
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.8
+      - key: JWT_SECRET
+        generateValue: true
+      - key: OWNER_SETUP_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: dlfr-db
+          property: connectionString
+      - key: CORS_ORIGINS
+        value: http://localhost:5173
+
+  - type: web
+    name: dlfr-website
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: ./dist
+    envVars:
+      - key: VITE_API_URL
+        fromService:
+          type: web
+          name: dlfr-api
+          envVarKey: RENDER_EXTERNAL_URL
+
+databases:
+  - name: dlfr-db
+    plan: free
+    region: singapore
+    databaseName: dlfr
+    user: dlfr_user
