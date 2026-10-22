@@ -550,20 +550,158 @@ def audit_log(limit: int = Query(100, ge=1, le=500), db: Session = Depends(get_d
     records = list(db.scalars(select(AuditLog).where(AuditLog.owner_id == owner.id).order_by(AuditLog.created_at.desc()).limit(limit)))
     return [{"id":r.id,"actor_id":r.actor_id,"action":r.action,"entity":r.entity,"entity_id":r.entity_id,"details":r.details,"created_at":r.created_at.isoformat() if r.created_at else None} for r in records]
 
+def _mandi_normalize(value: object) -> str:
+    """Normalize API/UI labels for tolerant comparisons without inventing data."""
+    return " ".join(str(value or "").casefold().strip().split())
+
+
+def _mandi_date(value: object):
+    """Parse AGMARKNET dates (normally DD/MM/YYYY) into date objects."""
+    from datetime import datetime as _dt
+    text = str(value or "").strip()
+    for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y"):
+        try:
+            return _dt.strptime(text, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _mandi_commodity_matches(actual: object, selected: str) -> bool:
+    actual_norm = _mandi_normalize(actual)
+    selected_norm = _mandi_normalize(selected)
+    aliases = {
+        "paddy / rice": ("paddy", "rice", "dhan"),
+        "gram / chana": ("gram", "chana"),
+        "arhar / tur": ("arhar", "tur", "pigeon pea"),
+        "mustard": ("mustard", "sarson"),
+        "maize": ("maize", "corn"),
+        "bajra": ("bajra", "pearl millet"),
+        "soybean": ("soybean", "soyabean", "soya bean"),
+        "urad": ("urad", "urd", "black gram"),
+        "moong": ("moong", "mung", "green gram"),
+        "masoor": ("masoor", "lentil"),
+        "groundnut": ("groundnut", "peanut"),
+        "sesame": ("sesame", "til"),
+        "linseed": ("linseed", "flax"),
+    }
+    terms = aliases.get(selected_norm, (selected_norm,))
+    return any(term in actual_norm for term in terms if term)
+
+
 @app.get("/api/mandi/prices")
-async def mandi_prices(state: str = Query("Rajasthan", min_length=2, max_length=100), district: str = Query("Kota", min_length=2, max_length=100), commodity: str = Query("Wheat", min_length=2, max_length=100), day: str = Query("today", pattern="^(yesterday|today|tomorrow)$")):
-    requested = date.today() + timedelta(days={"yesterday":-1,"today":0,"tomorrow":1}[day])
+async def mandi_prices(
+    state: str = Query("Rajasthan", min_length=2, max_length=100),
+    district: str = Query("Kota", min_length=2, max_length=100),
+    commodity: str = Query("Wheat", min_length=2, max_length=100),
+    day: str = Query("today", pattern="^(yesterday|today|tomorrow)$"),
+):
+    local_today = datetime.now(ZoneInfo(settings.report_timezone)).date()
+    requested = local_today + timedelta(days={"yesterday": -1, "today": 0, "tomorrow": 1}[day])
+    base = {"available": False, "day": day, "date": requested.isoformat(),
+            "state": state, "district": district, "commodity": commodity, "prices": []}
+
     if day == "tomorrow":
-        return {"available":False,"day":day,"date":requested.isoformat(),"state":state,"district":district,"commodity":commodity,"prices":[],"message":"Official mandi prices are not published in advance. Tomorrow's price cannot be confirmed; use the latest published prices as reference, not as a guarantee."}
+        return {**base, "message": "Official mandi prices are not published in advance. Tomorrow's price cannot be confirmed; use the latest published prices as reference, not as a guarantee."}
     if not settings.mandi_api_key:
-        return {"available":False,"day":day,"date":requested.isoformat(),"state":state,"district":district,"commodity":commodity,"prices":[],"message":"Live price access is not configured yet. Add a data.gov.in API key as MANDI_API_KEY in backend/.env. This app does not make up market rates."}
+        return {**base, "message": "Live price access is not configured. Set MANDI_API_KEY in the dlfr-api Render environment."}
+
     url = "https://api.data.gov.in/resource/9ef84268-d588-465a-a308-a864a43d0070"
-    params = {"api-key":settings.mandi_api_key,"format":"json","limit":100,"filters[state]":state,"filters[district]":district,"filters[commodity]":commodity,"filters[arrival_date]":requested.strftime("%d/%m/%Y")}
+    # The dataset exposes State as state.keyword. Arrival_Date is returned on
+    # each record but is not listed as an exposed API filter, so date filtering
+    # is done locally after retrieving the state's recent records.
+    params = {
+        "api-key": settings.mandi_api_key,
+        "format": "json",
+        "limit": 1000,
+        "offset": 0,
+        "filters[state.keyword]": state,
+        "sort[arrival_date]": "desc",
+    }
+
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            res = await client.get(url, params=params); res.raise_for_status(); body = res.json()
-        records = body.get("records", [])
-        prices = [{"state":r.get("state",""),"district":r.get("district",""),"market":r.get("market",""),"commodity":r.get("commodity",""),"variety":r.get("variety",""),"min_price":r.get("min_price"),"max_price":r.get("max_price"),"modal_price":r.get("modal_price"),"arrival_date":r.get("arrival_date","")} for r in records]
-        return {"available":bool(prices),"day":day,"date":requested.isoformat(),"state":state,"district":district,"commodity":commodity,"prices":prices,"source":"Government of India Open Government Data Platform / AGMARKNET","message":"Official records returned by the configured feed; prices vary by mandi, quality and arrivals." if prices else "No records were returned for this date and filter. Data publication can lag; try another nearby market or the latest date."}
+        # Retries transient connect errors and bypasses any accidental proxy
+        # environment variables on the hosted service. Never log or return the
+        # full request URL because the API key is sent as a query parameter.
+        transport = httpx.AsyncHTTPTransport(retries=2)
+        async with httpx.AsyncClient(
+            transport=transport,
+            timeout=httpx.Timeout(25.0),
+            follow_redirects=True,
+            trust_env=False,
+            headers={"Accept": "application/json", "User-Agent": "DLFR-Mandi/1.0"},
+        ) as client:
+            response = await client.get(url, params=params)
+            status_code = response.status_code
+            if status_code in (401, 403):
+                log.warning("Mandi provider rejected API key (HTTP %s)", status_code)
+                raise HTTPException(status_code=502, detail="The government data service rejected MANDI_API_KEY. Update it in Render Environment and redeploy.")
+            if status_code == 429:
+                log.warning("Mandi provider rate limited the request (HTTP 429)")
+                raise HTTPException(status_code=503, detail="The government data service is rate limiting requests. Please try again later.")
+            response.raise_for_status()
+            body = response.json()
+    except HTTPException:
+        raise
+    except httpx.ConnectError as exc:
+        log.warning("Mandi provider connection failed (%s)", type(exc).__name__)
+        raise HTTPException(
+            status_code=502,
+            detail="DLFR could not establish a network connection to api.data.gov.in. The key was not validated by this request; retry later or check Render outbound connectivity.",
+        ) from exc
+    except httpx.TimeoutException as exc:
+        log.warning("Mandi provider request timed out (%s)", type(exc).__name__)
+        raise HTTPException(status_code=504, detail="The government mandi service timed out. Please try again later.") from exc
+    except httpx.HTTPStatusError as exc:
+        log.warning("Mandi provider returned HTTP %s", exc.response.status_code)
+        raise HTTPException(status_code=502, detail=f"The government mandi service returned HTTP {exc.response.status_code}.") from exc
     except (httpx.HTTPError, ValueError) as exc:
-        raise HTTPException(status_code=502, detail=f"Mandi price service is temporarily unavailable: {exc}") from exc
+        log.warning("Could not read mandi response (%s)", type(exc).__name__)
+        raise HTTPException(status_code=502, detail="DLFR could not read a valid response from the government mandi service.") from exc
+
+    if not isinstance(body, dict) or body.get("status") not in ("ok", None):
+        provider_message = str(body.get("message", "unknown provider response")) if isinstance(body, dict) else "invalid JSON shape"
+        log.warning("Mandi provider response status not ok: %s", provider_message[:120])
+        raise HTTPException(status_code=502, detail="The government mandi service did not return a successful dataset response.")
+
+    records = body.get("records", [])
+    requested_state = _mandi_normalize(state)
+    requested_district = _mandi_normalize(district)
+    prices = []
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        if _mandi_normalize(record.get("state")) != requested_state:
+            continue
+        if _mandi_normalize(record.get("district")) != requested_district:
+            continue
+        if not _mandi_commodity_matches(record.get("commodity"), commodity):
+            continue
+        if _mandi_date(record.get("arrival_date")) != requested:
+            continue
+        prices.append({
+            "state": record.get("state", ""),
+            "district": str(record.get("district", "")).strip(),
+            "market": record.get("market", ""),
+            "commodity": record.get("commodity", ""),
+            "variety": record.get("variety", ""),
+            "grade": record.get("grade", ""),
+            "min_price": record.get("min_price"),
+            "max_price": record.get("max_price"),
+            "modal_price": record.get("modal_price"),
+            "arrival_date": record.get("arrival_date", ""),
+        })
+
+    # Report only live records that match the user's date/location/crop.
+    # An empty array remains an honest no-records result, never fabricated prices.
+    return {
+        **base,
+        "available": bool(prices),
+        "prices": prices,
+        "source": "Government of India Open Government Data Platform / AGMARKNET",
+        "message": (
+            "Official records returned by the configured feed; prices vary by market, variety and grade."
+            if prices else
+            "No published record matched this location, crop and date in the fetched records. Data publication can lag; try yesterday or another nearby district."
+        ),
+    }
