@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { LayoutDashboard, Wheat, ArrowDownToLine, ArrowUpFromLine, Users, Truck, ChartNoAxesCombined, Settings, LogOut, Plus, Menu, X, Sprout, ShieldCheck, CalendarDays, Download, Printer, LoaderCircle, UserCog, UserCheck, UserX, RefreshCw, Wallet, ClipboardCheck, CloudSun, FileText, Mail, Link2, Clock3, Search, BadgeIndianRupee, MessageCircle } from 'lucide-react';
+import { LayoutDashboard, Wheat, ArrowDownToLine, ArrowUpFromLine, Users, Truck, ChartNoAxesCombined, Settings, LogOut, Plus, Menu, X, Sprout, ShieldCheck, CalendarDays, Download, Printer, LoaderCircle, UserCog, UserCheck, UserX, RefreshCw, Wallet, ClipboardCheck, CloudSun, FileText, Mail, Link2, Clock3, Search, BadgeIndianRupee, MessageCircle, Tag } from 'lucide-react';
 import './style.css';
 
 const API = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
@@ -8,21 +8,148 @@ const money = v => new Intl.NumberFormat('en-IN',{style:'currency',currency:'INR
 const today = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 const monthNow = () => today().slice(0,7);
 const crops=['Wheat','Mustard','Gram / Chana','Barley','Maize','Paddy / Rice','Bajra','Soybean','Urad','Moong','Masoor','Arhar / Tur','Groundnut','Sesame','Linseed','Other'];
-const nav=[['dashboard','Overview',LayoutDashboard],['purchase','Purchases',ArrowDownToLine],['sale','Sales',ArrowUpFromLine],['parties','Farmers & companies',Users],['expenses','Transport & expenses',Truck],['workers','Workers & wages',ClipboardCheck],['mandi','Mandi prices',CloudSun],['reports','Reports & accounts',ChartNoAxesCombined],['settings','Settings',Settings]];
+const nav=[
+  ['dashboard','Overview',LayoutDashboard],
+  ['purchase','Purchases',ArrowDownToLine],
+  ['sale','Sales',ArrowUpFromLine],
+  ['parties','Farmers & companies',Users],
+  ['expenses','Transport & expenses',Truck],
+  ['workers','Workers & wages',ClipboardCheck],
+  ['public_prices','Daily prices',Tag],
+  ['mandi','Mandi prices',CloudSun],
+  ['reports','Reports & accounts',ChartNoAxesCombined],
+  ['settings','Settings',Settings]
+];
 
 function App(){
- const [token,setToken]=useState(localStorage.getItem('dlfr_token')||''); const [user,setUser]=useState(null); const [page,setPage]=useState('dashboard'); const [menu,setMenu]=useState(false); const [error,setError]=useState(''); const [notice,setNotice]=useState(''); const [busy,setBusy]=useState(false);
- const [dash,setDash]=useState(null); const [tx,setTx]=useState([]); const [expenses,setExpenses]=useState([]); const [parties,setParties]=useState([]); const [workers,setWorkers]=useState([]); const [managedUsers,setManagedUsers]=useState([]); const [portal,setPortal]=useState(null);
- const [authMode,setAuthMode]=useState('login'); const [auth,setAuth]=useState({name:'',email:'',password:''});
- const [dateFrom,setDateFrom]=useState(today().slice(0,8)+'01'); const [dateTo,setDateTo]=useState(today());
- async function api(path,opts={}){const res=await fetch(API+path,{...opts,headers:{'Content-Type':'application/json',...(token?{Authorization:`Bearer ${token}`}:{ }),...(opts.headers||{})}});const data=await res.json().catch(()=>({detail:'Unexpected server response'}));if(!res.ok)throw new Error(data.detail||`Request failed (${res.status})`);return data}
- async function refresh(){if(!token)return;try{setError('');const me=await api('/api/auth/me');setUser(me);if(['owner','admin'].includes(me.role)){const [d,t,e,p,w]=await Promise.all([api('/api/dashboard'),api('/api/transactions'),api('/api/expenses'),api('/api/parties'),api('/api/workers?include_inactive=true')]);setDash(d);setTx(t);setExpenses(e);setParties(p);setWorkers(w);setPortal(null);if(me.role==='owner')setManagedUsers(await api('/api/admin/users'));else setManagedUsers([])}else{setDash(null);setTx([]);setExpenses([]);setParties([]);setWorkers([]);setManagedUsers([]);setPortal(await api('/api/portal/summary'))}}catch(e){setError(e.message);localStorage.removeItem('dlfr_token');setToken('');setUser(null)} }
- useEffect(()=>{if(token)refresh()},[token]);
- async function submitAuth(e){e.preventDefault();setBusy(true);setError('');try{const path=authMode==='login'?'/api/auth/login':'/api/auth/register';const result=await fetch(API+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(auth)});const data=await result.json();if(!result.ok)throw new Error(data.detail||'Could not authenticate');localStorage.setItem('dlfr_token',data.access_token);setUser(data.user);setToken(data.access_token);setNotice(authMode==='register'?'Account created. New public accounts begin with Farmer access.':'Welcome back to DLFR.')}catch(e){setError(e.message)}finally{setBusy(false)}}
- function logout(){localStorage.removeItem('dlfr_token');setToken('');setUser(null);setDash(null);setPortal(null);setError('');setNotice('')}
- async function receiptBlob(id,isPortal=false){const route=isPortal?`/api/portal/transactions/${id}/receipt`:`/api/transactions/${id}/receipt`;const res=await fetch(`${API}${route}`,{headers:{Authorization:`Bearer ${token}`}});if(!res.ok){const data=await res.json().catch(()=>({}));throw new Error(data.detail||'Could not create receipt')}return await res.blob()}
- async function downloadReceipt(id,isPortal=false){try{const blob=await receiptBlob(id,isPortal);downloadBlob(blob,`DLFR-receipt-${id}.pdf`)}catch(e){setError(e.message)}}
- async function shareReceipt(row,isPortal=false){try{const blob=await receiptBlob(row.id,isPortal);const file=new File([blob],`DLFR-${row.invoice||row.id}.pdf`,{type:'application/pdf'});if(navigator.canShare?.({files:[file]})&&navigator.share){await navigator.share({files:[file],title:`DLFR receipt ${row.invoice||row.id}`,text:`DLFR receipt for ${row.party_name} · ${row.crop} · ${money(row.total)}`});return}downloadBlob(blob,`DLFR-${row.invoice||row.id}.pdf`);const message=`DLFR ${row.kind==='purchase'?'Purchase Receipt':'Sales Invoice'}
+  const [token,setToken]=useState(localStorage.getItem('dlfr_token')||'');
+  const [user,setUser]=useState(null);
+  const [page,setPage]=useState('dashboard');
+  const [menu,setMenu]=useState(false);
+  const [error,setError]=useState('');
+  const [notice,setNotice]=useState('');
+  const [busy,setBusy]=useState(false);
+  const [showPublicPrices, setShowPublicPrices]=useState(window.location.pathname === '/public-prices');
+
+  const [dash,setDash]=useState(null);
+  const [tx,setTx]=useState([]);
+  const [expenses,setExpenses]=useState([]);
+  const [parties,setParties]=useState([]);
+  const [workers,setWorkers]=useState([]);
+  const [managedUsers,setManagedUsers]=useState([]);
+  const [portal,setPortal]=useState(null);
+
+  const [authMode,setAuthMode]=useState('login');
+  const [auth,setAuth]=useState({name:'',email:'',password:''});
+  const [dateFrom,setDateFrom]=useState(today().slice(0,8)+'01');
+  const [dateTo,setDateTo]=useState(today());
+
+  async function api(path,opts={}){
+    const res=await fetch(API+path,{
+      ...opts,
+      headers:{
+        'Content-Type':'application/json',
+        ...(token?{Authorization:`Bearer ${token}`}:{ }),
+        ...(opts.headers||{})
+      }
+    });
+    const data=await res.json().catch(()=>({detail:'Unexpected server response'}));
+    if(!res.ok)throw new Error(data.detail||`Request failed (${res.status})`);
+    return data;
+  }
+
+  async function refresh(){
+    if(!token)return;
+    try{
+      setError('');
+      const me=await api('/api/auth/me');
+      setUser(me);
+      if(['owner','admin'].includes(me.role)){
+        const [d,t,e,p,w]=await Promise.all([
+          api('/api/dashboard'),
+          api('/api/transactions'),
+          api('/api/expenses'),
+          api('/api/parties'),
+          api('/api/workers?include_inactive=true')
+        ]);
+        setDash(d);setTx(t);setExpenses(e);setParties(p);setWorkers(w);setPortal(null);
+        if(me.role==='owner')setManagedUsers(await api('/api/admin/users'));
+        else setManagedUsers([]);
+      }else{
+        setDash(null);setTx([]);setExpenses([]);setParties([]);setWorkers([]);setManagedUsers([]);
+        setPortal(await api('/api/portal/summary'));
+      }
+    }catch(e){
+      setError(e.message);
+      localStorage.removeItem('dlfr_token');
+      setToken('');
+      setUser(null);
+    }
+  }
+
+  useEffect(()=>{if(token)refresh()},[token]);
+
+  async function submitAuth(e){
+    e.preventDefault();
+    setBusy(true);
+    setError('');
+    try{
+      const path=authMode==='login'?'/api/auth/login':'/api/auth/register';
+      const result=await fetch(API+path,{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(auth)
+      });
+      const data=await result.json();
+      if(!result.ok)throw new Error(data.detail||'Could not authenticate');
+      localStorage.setItem('dlfr_token',data.access_token);
+      setUser(data.user);
+      setToken(data.access_token);
+      setNotice(authMode==='register'?'Account created. New public accounts begin with Farmer access.':'Welcome back to DLFR.');
+    }catch(e){
+      setError(e.message);
+    }finally{
+      setBusy(false);
+    }
+  }
+
+  function logout(){
+    localStorage.removeItem('dlfr_token');
+    setToken('');
+    setUser(null);
+    setDash(null);
+    setPortal(null);
+    setError('');
+    setNotice('');
+  }
+
+  async function receiptBlob(id,isPortal=false){
+    const route=isPortal?`/api/portal/transactions/${id}/receipt`:`/api/transactions/${id}/receipt`;
+    const res=await fetch(`${API}${route}`,{headers:{Authorization:`Bearer ${token}`}});
+    if(!res.ok){
+      const data=await res.json().catch(()=>({}));
+      throw new Error(data.detail||'Could not create receipt');
+    }
+    return await res.blob();
+  }
+
+  async function downloadReceipt(id,isPortal=false){
+    try{
+      const blob=await receiptBlob(id,isPortal);
+      downloadBlob(blob,`DLFR-receipt-${id}.pdf`);
+    }catch(e){setError(e.message)}
+  }
+
+  async function shareReceipt(row,isPortal=false){
+    try{
+      const blob=await receiptBlob(row.id,isPortal);
+      const file=new File([blob],`DLFR-${row.invoice||row.id}.pdf`,{type:'application/pdf'});
+      if(navigator.canShare?.({files:[file]})&&navigator.share){
+        await navigator.share({files:[file],title:`DLFR receipt ${row.invoice||row.id}`,text:`DLFR receipt for ${row.party_name} · ${row.crop} · ${money(row.total)}`});
+        return;
+      }
+      downloadBlob(blob,`DLFR-${row.invoice||row.id}.pdf`);
+      const message=`DLFR ${row.kind==='purchase'?'Purchase Receipt':'Sales Invoice'}
 Invoice: ${row.invoice}
 Party: ${row.party_name}
 Crop: ${row.crop}
@@ -30,27 +157,1016 @@ Quantity: ${row.quantity_qtl} quintals
 Total: ${money(row.total)}
 Paid: ${money(row.paid)}
 Balance: ${money(row.balance)}
-The PDF was downloaded separately; attach it in WhatsApp.`;window.open(`https://wa.me/?text=${encodeURIComponent(message)}`,'_blank','noopener,noreferrer')}catch(e){if(e.name!=='AbortError')setError(e.message)}}
- if(!token||!user)return <Auth mode={authMode} setMode={setAuthMode} auth={auth} setAuth={setAuth} onSubmit={submitAuth} busy={busy} error={error}/>;
- if(!['owner','admin'].includes(user.role))return <Portal user={user} data={portal} logout={logout} error={error} refresh={refresh} downloadReceipt={downloadReceipt} shareReceipt={shareReceipt}/>;
- const visibleNav=nav;
- return <div className="app"><aside className={`sidebar ${menu?'open':''}`}><div className="brand"><div className="brandmark"><Wheat size={25}/></div><div><b>DLFR</b><span>DHAN LAXMI FOODS<br/>AND RESEARCH CENTRE</span></div><button className="iconbtn mobileclose" onClick={()=>setMenu(false)}><X/></button></div><div className="sidecaption">BUSINESS WORKSPACE</div><nav>{visibleNav.map(([id,label,Icon])=><button key={id} className={page===id?'navitem selected':'navitem'} onClick={()=>{setPage(id);setMenu(false);setError('');setNotice('')}}><Icon size={18}/>{label}</button>)}</nav><div className="sidebottom"><div className="secure"><ShieldCheck size={17}/><span><b>{user.role==='owner'?'Owner workspace':'Staff workspace'}</b><small>Signed in as {user.name}</small></span></div><button className="navitem" onClick={logout}><LogOut size={18}/>Sign out</button></div></aside><main className="main"><header className="topbar"><button className="iconbtn mobilemenu" onClick={()=>setMenu(true)}><Menu/></button><div><p className="eyebrow">GRAIN TRADING · BUSINESS MANAGEMENT</p><h2>{nav.find(x=>x[0]===page)?.[1]||'Overview'}</h2></div><div className="userpill"><span className="avatar">{user.name.slice(0,1).toUpperCase()}</span><span><b>{user.name}</b><small>{user.role==='owner'?'Owner / Administrator':'Business administrator'}</small></span></div></header><section className="content">{error&&<div className="alert" role="alert">{error}<button onClick={()=>setError('')}>Dismiss</button></div>}{notice&&<div className="successnotice">{notice}<button onClick={()=>setNotice('')}>Dismiss</button></div>}{page==='dashboard'&&<Dashboard dash={dash} tx={tx} setPage={setPage} onRefresh={refresh}/>}{['purchase','sale'].includes(page)&&<TransactionPage kind={page} rows={tx.filter(x=>x.kind===(page==='purchase'?'purchase':'sale'))} api={api} reload={refresh} setError={setError} downloadReceipt={downloadReceipt} shareReceipt={shareReceipt}/>}{page==='expenses'&&<ExpensePage rows={expenses} api={api} reload={refresh} setError={setError}/>}{page==='parties'&&<PartiesPage rows={parties} api={api} reload={refresh} setError={setError}/>}{page==='workers'&&<WorkersPage workers={workers} accounts={managedUsers} api={api} reload={refresh} setError={setError}/>}{page==='mandi'&&<MandiPage/>}{page==='reports'&&<Reports api={api} token={token} tx={tx} expenses={expenses} from={dateFrom} to={dateTo} setFrom={setDateFrom} setTo={setDateTo} downloadReceipt={downloadReceipt} shareReceipt={shareReceipt}/>}{page==='settings'&&<SettingsPage user={user} users={managedUsers} setUsers={setManagedUsers} parties={parties} api={api} setError={setError} setNotice={setNotice} onExport={async()=>{try{if(user.role==='owner'){downloadJSON(await api('/api/admin/export'),'DLFR-full-workspace-backup.json')}else{downloadJSON({dash,tx,expenses,parties,workers},'DLFR-workspace-summary.json')}}catch(e){setError(e.message)}}}/> }</section></main></div>
+The PDF was downloaded separately; attach it in WhatsApp.`;
+      window.open(`https://wa.me/?text=${encodeURIComponent(message)}`,'_blank','noopener,noreferrer');
+    }catch(e){
+      if(e.name!=='AbortError')setError(e.message);
+    }
+  }
+
+  // Handle unauthenticated public prices view
+  if (showPublicPrices) {
+    return (
+      <PublicPricesPage
+        onBack={() => {
+          setShowPublicPrices(false);
+          if (window.location.pathname === '/public-prices') {
+            window.history.pushState({}, '', '/');
+          }
+        }}
+      />
+    );
+  }
+
+  if(!token||!user) {
+    return (
+      <Auth
+        mode={authMode}
+        setMode={setAuthMode}
+        auth={auth}
+        setAuth={setAuth}
+        onSubmit={submitAuth}
+        busy={busy}
+        error={error}
+        onViewPrices={() => {
+          window.history.pushState({}, '', '/public-prices');
+          setShowPublicPrices(true);
+        }}
+      />
+    );
+  }
+
+  if(!['owner','admin'].includes(user.role)) {
+    return (
+      <Portal
+        user={user}
+        data={portal}
+        logout={logout}
+        error={error}
+        refresh={refresh}
+        downloadReceipt={downloadReceipt}
+        shareReceipt={shareReceipt}
+      />
+    );
+  }
+
+  const visibleNav = nav;
+
+  return (
+    <div className="app">
+      <aside className={`sidebar ${menu?'open':''}`}>
+        <div className="brand">
+          <div className="brandmark"><Wheat size={25}/></div>
+          <div><b>DLFR</b><span>DHAN LAXMI FOODS<br/>AND RESEARCH CENTRE</span></div>
+          <button className="iconbtn mobileclose" onClick={()=>setMenu(false)}><X/></button>
+        </div>
+        <div className="sidecaption">BUSINESS WORKSPACE</div>
+        <nav>
+          {visibleNav.map(([id,label,Icon])=>(
+            <button
+              key={id}
+              className={page===id?'navitem selected':'navitem'}
+              onClick={()=>{setPage(id);setMenu(false);setError('');setNotice('')}}
+            >
+              <Icon size={18}/>{label}
+            </button>
+          ))}
+        </nav>
+        <div className="sidebottom">
+          <div className="secure">
+            <ShieldCheck size={17}/>
+            <span><b>{user.role==='owner'?'Owner workspace':'Staff workspace'}</b><small>Signed in as {user.name}</small></span>
+          </div>
+          <button className="navitem" onClick={logout}><LogOut size={18}/>Sign out</button>
+        </div>
+      </aside>
+      <main className="main">
+        <header className="topbar">
+          <button className="iconbtn mobilemenu" onClick={()=>setMenu(true)}><Menu/></button>
+          <div>
+            <p className="eyebrow">GRAIN TRADING · BUSINESS MANAGEMENT</p>
+            <h2>{nav.find(x=>x[0]===page)?.[1]||'Overview'}</h2>
+          </div>
+          <div className="userpill">
+            <span className="avatar">{user.name.slice(0,1).toUpperCase()}</span>
+            <span><b>{user.name}</b><small>{user.role==='owner'?'Owner / Administrator':'Business administrator'}</small></span>
+          </div>
+        </header>
+        <section className="content">
+          {error&&<div className="alert" role="alert">{error}<button onClick={()=>setError('')}>Dismiss</button></div>}
+          {notice&&<div className="successnotice">{notice}<button onClick={()=>setNotice('')}>Dismiss</button></div>}
+          {page==='dashboard'&&<Dashboard dash={dash} tx={tx} setPage={setPage} onRefresh={refresh}/>}
+          {['purchase','sale'].includes(page)&&<TransactionPage kind={page} rows={tx.filter(x=>x.kind===(page==='purchase'?'purchase':'sale'))} api={api} reload={refresh} setError={setError} downloadReceipt={downloadReceipt} shareReceipt={shareReceipt}/>}
+          {page==='expenses'&&<ExpensePage rows={expenses} api={api} reload={refresh} setError={setError}/>}
+          {page==='parties'&&<PartiesPage rows={parties} api={api} reload={refresh} setError={setError}/>}
+          {page==='workers'&&<WorkersPage workers={workers} accounts={managedUsers} api={api} reload={refresh} setError={setError}/>}
+          {page==='public_prices'&&<PublicPricesPage />}
+          {page==='mandi'&&<MandiPage/>}
+          {page==='reports'&&<Reports api={api} token={token} tx={tx} expenses={expenses} from={dateFrom} to={dateTo} setFrom={setDateFrom} setTo={setDateTo} downloadReceipt={downloadReceipt} shareReceipt={shareReceipt}/>}
+          {page==='settings'&&<SettingsPage user={user} users={managedUsers} setUsers={setManagedUsers} parties={parties} api={api} setError={setError} setNotice={setNotice} onExport={async()=>{try{if(user.role==='owner'){downloadJSON(await api('/api/admin/export'),'DLFR-full-workspace-backup.json')}else{downloadJSON({dash,tx,expenses,parties,workers},'DLFR-workspace-summary.json')}}catch(e){setError(e.message)}}}/> }
+        </section>
+      </main>
+    </div>
+  );
 }
 
-function Auth({mode,setMode,auth,setAuth,onSubmit,busy,error}){return <div className="authpage"><div className="authvisual"><div className="brand brandlight"><div className="brandmark"><Wheat/></div><div><b>DLFR</b><span>DHAN LAXMI FOODS<br/>AND RESEARCH CENTRE</span></div></div><div className="heroCopy"><p className="eyebrow">BUILT ON TRUST. GROWN WITH CARE.</p><h1>Every grain.<br/><em>Every record.</em><br/>In one place.</h1><p>A modern workspace for grain trading, daily accounts, customer records and business clarity.</p><div className="heroTags"><span><Sprout size={15}/> Crop records</span><span><ShieldCheck size={15}/> Protected access</span></div></div><div className="authbottom">A better way to manage your grain business.</div></div><div className="authformside"><form className="authform" onSubmit={onSubmit}><div className="smallmark"><Wheat size={19}/></div><p className="eyebrow">{mode==='login'?'WELCOME BACK':'GET STARTED'}</p><h2>{mode==='login'?'Sign in to DLFR':'Create your account'}</h2><p className="muted">{mode==='login'?'Access your business workspace securely.':'New accounts start with Farmer access. The DLFR owner assigns roles.'}</p>{error&&<div className="alert">{error}</div>}{mode==='register'&&<label>Full name<input required minLength="2" value={auth.name} onChange={e=>setAuth({...auth,name:e.target.value})} placeholder="Your full name"/></label>}<label>Email address<input required type="email" value={auth.email} onChange={e=>setAuth({...auth,email:e.target.value})} placeholder="you@business.com"/></label><label>Password<input required minLength="10" type="password" value={auth.password} onChange={e=>setAuth({...auth,password:e.target.value})} placeholder="At least 10 characters"/></label><button className="btn full" disabled={busy}>{busy?<LoaderCircle className="spin"/>:null}{mode==='login'?'Sign in':'Create account'}</button><p className="switch">{mode==='login'?'New to DLFR?':'Already registered?'} <button type="button" onClick={()=>setMode(mode==='login'?'register':'login')}>{mode==='login'?'Create account':'Sign in'}</button></p><p className="tiny">Use a strong, unique password. Never share your login details.</p></form></div></div>}
+function PublicPricesPage({ onBack }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState('');
 
-function Dashboard({dash,tx,setPage,onRefresh}){const latest=tx.slice(0,6);return <><div className="welcome"><div><p className="eyebrow">YOUR BUSINESS, IN CLEAR VIEW</p><h1>Good business starts<br/>with good records.</h1><p>Track the movement of every quintal and every rupee. Keep bills, balances and daily activity together.</p><div className="buttonrow"><button className="btn goldbtn" onClick={()=>setPage('purchase')}><Plus size={17}/> Record a purchase</button><button className="btn secondary" onClick={onRefresh}><RefreshCw size={16}/> Refresh data</button></div></div><div className="wheatart"><Wheat size={100}/><Sprout size={55}/></div></div><div className="metricgrid"><Metric label="Total purchases" value={money(dash?.purchases)} icon={ArrowDownToLine} tone="amber"/><Metric label="Total sales" value={money(dash?.sales)} icon={ArrowUpFromLine} tone="blue"/><Metric label="Recorded expenses" value={money(dash?.expenses)} icon={Truck} tone="rose"/><Metric label="Outstanding sales bills" value={money(dash?.outstanding_sales)} icon={Wallet} tone="green"/></div><div className="metricgrid secondmetrics"><Metric label="Outstanding purchase bills" value={money(dash?.outstanding_purchases)} icon={BadgeIndianRupee} tone="amber"/><Metric label="FIFO gross margin estimate" value={dash?.fifo_gross_margin_estimate==null?'Not available':money(dash?.fifo_gross_margin_estimate)} icon={ChartNoAxesCombined} tone="blue"/><Metric label="Today purchases" value={money(dash?.today?.purchase_total)} icon={CalendarDays} tone="rose"/><Metric label="Today sales" value={money(dash?.today?.sales_total)} icon={CalendarDays} tone="green"/></div><p className="footnote">{dash?.fifo_note||dash?.note||'Business summary.'}</p><div className="sectionheading"><div><p className="eyebrow">LATEST ACTIVITY</p><h3>Recent transactions</h3></div><button className="textbtn" onClick={()=>setPage('reports')}>View reports →</button></div><TransactionTable rows={latest}/>{!latest.length&&<div className="empty">Your latest purchases and sales will appear here.</div>}</>}
-function Metric({label,value,icon:Icon,tone}){return <div className={`metric ${tone||''}`}><div className="metricicon"><Icon size={19}/></div><span>{label}</span><strong>{value??'—'}</strong></div>}
-function Field({label,children,wide=false}){return <label className={wide?'field wide':'field'}><span>{label}</span>{children}</label>}
-function TransactionPage({kind,rows,api,reload,setError,downloadReceipt,shareReceipt}){const [f,setF]=useState({date:today(),time_text:new Date().toTimeString().slice(0,5),invoice:'',party_name:'',party_kind:kind==='purchase'?'farmer':'company',crop:'Wheat',variety:'',quantity_qtl:'',rate:'',extra_charges:'0',deductions:'0',paid:'0',payment_method:'Cash',notes:''});const total=Math.max(0,Number(f.quantity_qtl||0)*Number(f.rate||0)+Number(f.extra_charges||0)-Number(f.deductions||0));async function submit(e){e.preventDefault();setError('');try{await api(`/api/transactions/${kind}`,{method:'POST',body:JSON.stringify({...f,quantity_qtl:Number(f.quantity_qtl),rate:Number(f.rate),extra_charges:Number(f.extra_charges),deductions:Number(f.deductions),paid:Number(f.paid)})});setF({...f,date:today(),time_text:new Date().toTimeString().slice(0,5),invoice:'',party_name:'',crop:'Wheat',variety:'',quantity_qtl:'',rate:'',extra_charges:'0',deductions:'0',paid:'0',notes:''});await reload()}catch(e){setError(e.message)}}return <><div className="pageintro"><p className="eyebrow">{kind==='purchase'?'GRAIN INWARD REGISTER':'GRAIN OUTWARD REGISTER'}</p><h1>{kind==='purchase'?'Record a purchase':'Record a sale'}</h1><p>Enter all quantities in quintals. The total and outstanding balance are calculated by the server.</p></div><form className="formcard" onSubmit={submit}><div className="fields"><Field label="Date"><input type="date" required value={f.date} onChange={e=>setF({...f,date:e.target.value})}/></Field><Field label="Time"><input type="time" value={f.time_text} onChange={e=>setF({...f,time_text:e.target.value})}/></Field><Field label="Invoice (optional)"><input value={f.invoice} maxLength="50" onChange={e=>setF({...f,invoice:e.target.value})} placeholder="Auto-generated if blank"/></Field><Field label="Farmer / company name"><input required value={f.party_name} onChange={e=>setF({...f,party_name:e.target.value})} placeholder="Must match customer directory name for portal link"/></Field><Field label="Party type"><select value={f.party_kind} onChange={e=>setF({...f,party_kind:e.target.value})}>{['farmer','company','supplier','other'].map(x=><option key={x}>{x}</option>)}</select></Field><Field label="Crop"><select value={f.crop} onChange={e=>setF({...f,crop:e.target.value})}>{crops.map(x=><option key={x}>{x}</option>)}</select></Field><Field label="Variety / grade"><input value={f.variety} onChange={e=>setF({...f,variety:e.target.value})}/></Field><Field label="Quantity (quintals)"><input type="number" min="0.001" step="0.001" required value={f.quantity_qtl} onChange={e=>setF({...f,quantity_qtl:e.target.value})}/></Field><Field label="Rate per quintal (₹)"><input type="number" min="0" step="0.01" required value={f.rate} onChange={e=>setF({...f,rate:e.target.value})}/></Field><Field label="Extra charges (₹)"><input type="number" min="0" step="0.01" value={f.extra_charges} onChange={e=>setF({...f,extra_charges:e.target.value})}/></Field><Field label="Deductions (₹)"><input type="number" min="0" step="0.01" value={f.deductions} onChange={e=>setF({...f,deductions:e.target.value})}/></Field><Field label="Paid now (₹)"><input type="number" min="0" max={total} step="0.01" value={f.paid} onChange={e=>setF({...f,paid:e.target.value})}/></Field><Field label="Payment method"><select value={f.payment_method} onChange={e=>setF({...f,payment_method:e.target.value})}>{['Cash','Bank transfer','UPI','Cheque','Other'].map(x=><option key={x}>{x}</option>)}</select></Field><Field label="Notes" wide><textarea value={f.notes} onChange={e=>setF({...f,notes:e.target.value})}/></Field></div><div className="billpreview"><span>Calculated total</span><strong>{money(total)}</strong><span>Balance due</span><strong>{money(Math.max(0,total-Number(f.paid||0)))}</strong></div><div className="formactions"><button className="btn"><Plus size={16}/> Save {kind}</button></div></form><div className="sectionheading"><h3>{kind==='purchase'?'Purchase':'Sales'} history</h3><span className="count">{rows.length} entries</span></div><TransactionTable rows={rows} onReceipt={id=>downloadReceipt(id,false)} onShare={row=>shareReceipt(row,false)} onPayment={async row=>{const amount=window.prompt(`Outstanding balance ${money(row.balance)}. Payment amount (₹):`);if(amount===null)return;if(!Number.isFinite(Number(amount))||Number(amount)<=0){setError('Enter a valid payment amount.');return}try{await api(`/api/transactions/${row.id}/payments`,{method:'POST',body:JSON.stringify({date:today(),amount:Number(amount),method:'Cash',reference:'',notes:'Payment recorded from register'})});await reload()}catch(e){setError(e.message)}}}/></>}
-function TransactionTable({rows,onReceipt,onShare,onPayment}){return <div className="tablecard"><table><thead><tr><th>Date / invoice</th><th>Type</th><th>Party</th><th>Crop</th><th>Quintals</th><th>Rate</th><th>Total</th><th>Paid</th><th>Balance</th>{(onReceipt||onPayment||onShare)&&<th>Actions</th>}</tr></thead><tbody>{rows.map(r=><tr key={r.id}><td>{r.date}<span className="subcell">{r.invoice} {r.time_text}</span></td><td><span className={`kindtag ${r.kind}`}>{r.kind}</span></td><td><b>{r.party_name}</b><span className="subcell">{r.party_kind}</span></td><td>{r.crop}<span className="subcell">{r.variety}</span></td><td>{Number(r.quantity_qtl).toLocaleString('en-IN')}</td><td>{money(r.rate)}</td><td><b>{money(r.total)}</b></td><td>{money(r.paid)}</td><td>{money(r.balance)}</td>{(onReceipt||onPayment||onShare)&&<td className="tableactions">{onReceipt&&<button className="useraction-btn" onClick={()=>onReceipt(r.id)} title="Download PDF receipt"><Printer size={14}/></button>}{onShare&&<button className="useraction-btn" onClick={()=>onShare(r)} title="Share receipt or send details to WhatsApp"><MessageCircle size={14}/></button>}{onPayment&&Number(r.balance)>0&&<button className="useraction-btn" onClick={()=>onPayment(r)} title="Record payment"><Wallet size={14}/></button>}</td>}</tr>)}</tbody></table>{!rows.length&&<div className="empty">No transactions recorded yet.</div>}</div>}
-function ExpensePage({rows,api,reload,setError}){const [f,setF]=useState({date:today(),category:'Transport',amount:'',payee:'',transport_company:'',vehicle:'',notes:''});async function submit(e){e.preventDefault();try{await api('/api/expenses',{method:'POST',body:JSON.stringify({...f,amount:Number(f.amount)})});setF({...f,date:today(),amount:'',payee:'',transport_company:'',vehicle:'',notes:''});await reload()}catch(e){setError(e.message)}}return <><div className="pageintro"><p className="eyebrow">COSTS THAT KEEP THE BUSINESS MOVING</p><h1>Transport & expenses</h1><p>Log freight, labour, loading, packaging, vehicle and other operating expenses.</p></div><form className="formcard" onSubmit={submit}><div className="fields"><Field label="Date"><input type="date" required value={f.date} onChange={e=>setF({...f,date:e.target.value})}/></Field><Field label="Category"><select value={f.category} onChange={e=>setF({...f,category:e.target.value})}>{['Transport','Driver','Loading / labour','Packaging','Storage','Fuel','Maintenance','Utilities','Other'].map(x=><option key={x}>{x}</option>)}</select></Field><Field label="Amount (₹)"><input type="number" min="0.01" step="0.01" required value={f.amount} onChange={e=>setF({...f,amount:e.target.value})}/></Field><Field label="Driver / payee"><input value={f.payee} onChange={e=>setF({...f,payee:e.target.value})}/></Field><Field label="Transport business"><input value={f.transport_company} onChange={e=>setF({...f,transport_company:e.target.value})}/></Field><Field label="Vehicle number"><input value={f.vehicle} onChange={e=>setF({...f,vehicle:e.target.value})}/></Field><Field label="Notes" wide><textarea value={f.notes} onChange={e=>setF({...f,notes:e.target.value})}/></Field></div><div className="formactions"><button className="btn"><Plus size={16}/> Save expense</button></div></form><div className="sectionheading"><h3>Expense history</h3><span className="count">{rows.length} entries</span></div><div className="tablecard"><table><thead><tr><th>Date</th><th>Category</th><th>Payee</th><th>Transport company</th><th>Vehicle</th><th>Amount</th></tr></thead><tbody>{rows.map(r=><tr key={r.id}><td>{r.date}</td><td>{r.category}</td><td>{r.payee}</td><td>{r.transport_company}</td><td>{r.vehicle}</td><td>{money(r.amount)}</td></tr>)}</tbody></table>{!rows.length&&<div className="empty">No expenses recorded yet.</div>}</div></>}
-function PartiesPage({rows,api,reload,setError}){const [f,setF]=useState({name:'',kind:'farmer',phone:'',email:'',address:''});async function submit(e){e.preventDefault();try{await api('/api/parties',{method:'POST',body:JSON.stringify(f)});setF({name:'',kind:'farmer',phone:'',email:'',address:''});await reload()}catch(e){setError(e.message)}}return <><div className="pageintro"><p className="eyebrow">YOUR NETWORK</p><h1>Farmers & companies</h1><p>Keep a clean directory of farmers, suppliers and company customers. Use the exact customer name on transaction bills to match the portal record.</p></div><form className="formcard" onSubmit={submit}><div className="fields"><Field label="Name"><input required value={f.name} onChange={e=>setF({...f,name:e.target.value})}/></Field><Field label="Account type"><select value={f.kind} onChange={e=>setF({...f,kind:e.target.value})}>{['farmer','company','supplier','both','other'].map(x=><option key={x}>{x}</option>)}</select></Field><Field label="Phone"><input value={f.phone} onChange={e=>setF({...f,phone:e.target.value})}/></Field><Field label="Email"><input type="email" value={f.email} onChange={e=>setF({...f,email:e.target.value})}/></Field><Field label="Address" wide><input value={f.address} onChange={e=>setF({...f,address:e.target.value})}/></Field></div><div className="formactions"><button className="btn"><Plus size={16}/> Save customer</button></div></form><div className="sectionheading"><h3>Customer directory</h3><span className="count">{rows.length} records</span></div><div className="tablecard"><table><thead><tr><th>Name</th><th>Type</th><th>Phone</th><th>Email</th><th>Address</th></tr></thead><tbody>{rows.map(r=><tr key={r.id}><td><b>{r.name}</b></td><td>{r.kind}</td><td>{r.phone}</td><td>{r.email}</td><td>{r.address}</td></tr>)}</tbody></table>{!rows.length&&<div className="empty">Add your first farmer, supplier or company.</div>}</div></>}
-function WorkersPage({workers,accounts,api,reload,setError}){const [f,setF]=useState({name:'',phone:'',job_title:'General worker',daily_wage:'500',linked_user_id:''});const [attendance,setAttendance]=useState({worker_id:'',date:today(),status:'present',overtime_hours:'0',notes:''});const [month,setMonth]=useState(monthNow());const [payroll,setPayroll]=useState(null);const [saving,setSaving]=useState(false);async function loadPayroll(m=month){try{setPayroll(await api(`/api/payroll?month=${m}`))}catch(e){setError(e.message)}}useEffect(()=>{loadPayroll(month)},[month]);useEffect(()=>{if(!attendance.worker_id&&workers.find(w=>w.is_active))setAttendance(a=>({...a,worker_id:String(workers.find(w=>w.is_active).id)}))},[workers]);async function addWorker(e){e.preventDefault();try{await api('/api/workers',{method:'POST',body:JSON.stringify({...f,daily_wage:Number(f.daily_wage),linked_user_id:f.linked_user_id?Number(f.linked_user_id):null})});setF({name:'',phone:'',job_title:'General worker',daily_wage:'500',linked_user_id:''});await reload()}catch(e){setError(e.message)}}async function mark(e){e.preventDefault();try{await api('/api/attendance',{method:'POST',body:JSON.stringify({...attendance,worker_id:Number(attendance.worker_id),overtime_hours:Number(attendance.overtime_hours)})});await loadPayroll()}catch(e){setError(e.message)}}async function pay(row){const amount=window.prompt(`Salary due for ${row.name}: ${money(row.balance)}. Enter amount to pay:`);if(amount===null)return;if(Number(amount)<=0){setError('Enter a positive payment amount.');return}try{setSaving(true);await api('/api/wage-payments',{method:'POST',body:JSON.stringify({worker_id:row.worker_id,date:today(),period_month:month,amount:Number(amount),method:'Cash',reference:'',notes:'Payroll payment'})});await loadPayroll()}catch(e){setError(e.message)}finally{setSaving(false)}}return <><div className="pageintro"><p className="eyebrow">TEAM & DAILY WAGES</p><h1>Workers & attendance</h1><p>Add workers, mark daily attendance and track earned wages and payments by month.</p></div><form className="formcard" onSubmit={addWorker}><h3>Add a worker</h3><div className="fields"><Field label="Worker name"><input required minLength="2" value={f.name} onChange={e=>setF({...f,name:e.target.value})}/></Field><Field label="Phone"><input value={f.phone} onChange={e=>setF({...f,phone:e.target.value})}/></Field><Field label="Job title"><input value={f.job_title} onChange={e=>setF({...f,job_title:e.target.value})}/></Field><Field label="Daily wage (₹)"><input type="number" min="0" step="0.01" required value={f.daily_wage} onChange={e=>setF({...f,daily_wage:e.target.value})}/></Field><Field label="Optional worker login"><select value={f.linked_user_id} onChange={e=>setF({...f,linked_user_id:e.target.value})}><option value="">No portal login</option>{accounts.filter(a=>a.role==='worker'&&!workers.some(w=>w.linked_user_id===a.id)).map(a=><option key={a.id} value={a.id}>{a.name} · {a.email}</option>)}</select></Field></div><div className="formactions"><button className="btn"><Plus size={16}/> Add worker</button></div></form><form className="formcard" onSubmit={mark}><h3>Mark attendance</h3><div className="fields"><Field label="Worker"><select required value={attendance.worker_id} onChange={e=>setAttendance({...attendance,worker_id:e.target.value})}>{workers.filter(w=>w.is_active).map(w=><option key={w.id} value={w.id}>{w.name}</option>)}</select></Field><Field label="Date"><input type="date" required value={attendance.date} onChange={e=>setAttendance({...attendance,date:e.target.value})}/></Field><Field label="Attendance"><select value={attendance.status} onChange={e=>setAttendance({...attendance,status:e.target.value})}><option value="present">Present (1 day)</option><option value="half">Half day (0.5)</option><option value="absent">Absent (0)</option></select></Field><Field label="Overtime hours (record only)"><input type="number" min="0" max="24" step="0.25" value={attendance.overtime_hours} onChange={e=>setAttendance({...attendance,overtime_hours:e.target.value})}/></Field><Field label="Notes" wide><input value={attendance.notes} onChange={e=>setAttendance({...attendance,notes:e.target.value})}/></Field></div><div className="formactions"><button className="btn"><ClipboardCheck size={16}/> Save attendance</button></div></form><div className="sectionheading"><h3>Payroll summary</h3><span className="count">{month}</span></div><div className="formcard"><div className="fields"><Field label="Payroll month"><input type="month" value={month} onChange={e=>setMonth(e.target.value)}/></Field></div><div className="metricgrid"><Metric label="Wages earned" value={money(payroll?.total_earned)} icon={Wallet} tone="amber"/><Metric label="Wages paid" value={money(payroll?.total_paid)} icon={BadgeIndianRupee} tone="blue"/><Metric label="Wages outstanding" value={money(payroll?.total_balance)} icon={ChartNoAxesCombined} tone="rose"/></div></div><div className="tablecard"><table><thead><tr><th>Worker</th><th>Attendance units</th><th>Daily wage</th><th>Earned</th><th>Paid</th><th>Balance</th><th>Action</th></tr></thead><tbody>{(payroll?.workers||[]).map(r=><tr key={r.worker_id}><td><b>{r.name}</b><span className="subcell">{r.job_title}</span></td><td>{r.present_days} ({r.attendance_days} entries)</td><td>{money(r.daily_wage)}</td><td>{money(r.earned)}</td><td>{money(r.paid)}</td><td>{money(r.balance)}</td><td><button className="useraction-btn" disabled={saving||Number(r.balance)<=0} onClick={()=>pay(r)}><Wallet size={14}/> Pay</button></td></tr>)}</tbody></table>{!(payroll?.workers||[]).length&&<div className="empty">Add workers and mark attendance to calculate payroll.</div>}</div><p className="footnote">Attendance wages use present = 1 day, half = 0.5 day, absent = 0. Overtime hours are recorded but not included in wage calculations until an overtime rate is configured.</p></>}
-function MandiPage(){const [state,setState]=useState('Rajasthan');const [district,setDistrict]=useState('Kota');const [commodity,setCommodity]=useState('Wheat');const [day,setDay]=useState('today');const [result,setResult]=useState(null);const [loading,setLoading]=useState(false);const [error,setError]=useState('');async function lookup(e){e?.preventDefault();setLoading(true);setError('');try{const p=new URLSearchParams({state,district,commodity,day});const res=await fetch(`${API}/api/mandi/prices?${p}`);const data=await res.json();if(!res.ok)throw new Error(data.detail||'Mandi request failed');setResult(data)}catch(e){setError(e.message)}finally{setLoading(false)}}return <><div className="pageintro"><p className="eyebrow">OFFICIAL MARKET INFORMATION</p><h1>Mandi price desk</h1><p>Look up published government mandi records by location, crop and date. No invented prices are shown.</p></div><form className="formcard" onSubmit={lookup}><div className="fields"><Field label="State"><input required value={state} onChange={e=>setState(e.target.value)}/></Field><Field label="District"><input required value={district} onChange={e=>setDistrict(e.target.value)}/></Field><Field label="Commodity"><select value={commodity} onChange={e=>setCommodity(e.target.value)}>{crops.map(x=><option key={x}>{x}</option>)}</select></Field><Field label="Date range"><select value={day} onChange={e=>setDay(e.target.value)}><option value="yesterday">Yesterday</option><option value="today">Today</option><option value="tomorrow">Tomorrow</option></select></Field></div><div className="formactions"><button className="btn" disabled={loading}>{loading?<LoaderCircle className="spin"/>:<Search size={16}/>} Check prices</button></div></form>{error&&<div className="alert">{error}</div>}{result&&<div className="formcard mandi-results"><div className="sectionheading"><h3>{result.commodity} · {result.district}</h3><span className="count">{result.date}</span></div><p>{result.message}</p>{result.source&&<p className="footnote">Source: {result.source}</p>}{result.prices?.length?<div className="tablecard"><table><thead><tr><th>Market</th><th>Variety</th><th>Minimum</th><th>Modal</th><th>Maximum</th><th>Published date</th></tr></thead><tbody>{result.prices.map((r,i)=><tr key={`${r.market}-${i}`}><td>{r.market}</td><td>{r.variety}</td><td>{money(r.min_price)}</td><td><b>{money(r.modal_price)}</b></td><td>{money(r.max_price)}</td><td>{r.arrival_date}</td></tr>)}</tbody></table></div>:<div className="empty">No official rates to show for this selection.</div>}</div>}<div className="adminnote"><CloudSun size={17}/><span>Tomorrow's mandi price cannot be known with certainty. Future-date lookups are explicitly marked unavailable instead of showing fabricated forecasts. Live historical/current requests require a data.gov.in API key in the backend .env file.</span></div></>}
-function Reports({api,token,tx,expenses,from,to,setFrom,setTo,downloadReceipt,shareReceipt}){const [summary,setSummary]=useState(null);const [loading,setLoading]=useState(false);const within=r=>r.date>=from&&r.date<=to;const purchases=tx.filter(r=>r.kind==='purchase'&&within(r)),sales=tx.filter(r=>r.kind==='sale'&&within(r)),ex=expenses.filter(within);async function load(){setLoading(true);try{setSummary(await api(`/api/reports/summary?start=${from}&end=${to}`))}catch(e){setSummary(null)}finally{setLoading(false)}}useEffect(()=>{if(from&&to&&from<=to)load()},[from,to]);function exportCsv(){const all=[...purchases,...sales].map(r=>({date:r.date,time:r.time_text,kind:r.kind,invoice:r.invoice,party:r.party_name,crop:r.crop,quantity_qtl:r.quantity_qtl,rate:r.rate,total:r.total,paid:r.paid,balance:r.balance}));downloadCSV(all,`DLFR-transactions-${from}-to-${to}.csv`)}return <><div className="pageintro"><p className="eyebrow">CLEAR NUMBERS. BETTER DECISIONS.</p><h1>Date-wise reports & accounts</h1><p>Review purchase/sales totals, recorded expenses, unpaid balances and an indicative FIFO gross margin where data allows.</p></div><div className="formcard"><div className="fields"><Field label="From date"><input type="date" value={from} onChange={e=>setFrom(e.target.value)}/></Field><Field label="To date"><input type="date" value={to} onChange={e=>setTo(e.target.value)}/></Field></div><div className="formactions"><button className="btn" onClick={exportCsv}><Download size={16}/> Export transactions CSV</button><button className="btn secondary" onClick={()=>downloadJSON({summary,transactions:[...purchases,...sales],expenses:ex},`DLFR-${from}-to-${to}.json`)}><Download size={16}/> Export JSON</button><button className="btn secondary" onClick={()=>window.print()}><Printer size={16}/> Print report</button></div></div>{loading&&<p className="muted">Calculating report…</p>}<div className="metricgrid"><Metric label="Purchases in period" value={money(summary?.purchase_total??sum(purchases,'total'))} icon={ArrowDownToLine} tone="amber"/><Metric label="Sales in period" value={money(summary?.sales_total??sum(sales,'total'))} icon={ArrowUpFromLine} tone="blue"/><Metric label="Expenses in period" value={money(summary?.expense_total??sum(ex,'amount'))} icon={Truck} tone="rose"/><Metric label="FIFO gross margin estimate" value={summary?.fifo_gross_margin_estimate==null?(summary?'Not available':'—'):money(summary.fifo_gross_margin_estimate)} icon={ChartNoAxesCombined} tone="green"/></div><div className="metricgrid secondmetrics"><Metric label="Purchase balance" value={money(summary?.outstanding_purchase_bills)} icon={Wallet} tone="amber"/><Metric label="Sales balance" value={money(summary?.outstanding_sale_bills)} icon={Wallet} tone="blue"/><Metric label="Purchase volume" value={`${Number(summary?.purchase_quantity_qtl||0).toLocaleString('en-IN')} qtl`} icon={Wheat} tone="rose"/><Metric label="Sales volume" value={`${Number(summary?.sale_quantity_qtl||0).toLocaleString('en-IN')} qtl`} icon={Wheat} tone="green"/></div>{summary&&<p className="footnote">{summary.fifo_note} {summary.accounting_note}</p>}<div className="sectionheading"><h3>Purchases & sales</h3><span className="count">{purchases.length+sales.length} records</span></div><TransactionTable rows={[...purchases,...sales].sort((a,b)=>b.date.localeCompare(a.date))} onReceipt={id=>downloadReceipt(id,false)} onShare={row=>shareReceipt(row,false)}/><div className="sectionheading"><h3>Expenses</h3><span className="count">{ex.length} records</span></div><div className="tablecard"><table><thead><tr><th>Date</th><th>Category</th><th>Payee</th><th>Transport company</th><th>Amount</th></tr></thead><tbody>{ex.map(r=><tr key={r.id}><td>{r.date}</td><td>{r.category}</td><td>{r.payee}</td><td>{r.transport_company}</td><td>{money(r.amount)}</td></tr>)}</tbody></table>{!ex.length&&<div className="empty">No expenses for this period.</div>}</div></>}
+  useEffect(() => {
+    fetch(`${API}/api/public/purchase-prices`)
+      .then(res => {
+        if (!res.ok) throw new Error('Could not load current purchase prices');
+        return res.json();
+      })
+      .then(d => {
+        setData(d);
+        setLoading(false);
+      })
+      .catch(e => {
+        setErr(e.message);
+        setLoading(false);
+      });
+  }, []);
+
+  return (
+    <div className="authpage" style={{ display: 'block', minHeight: '100vh', padding: '2.5rem 1rem' }}>
+      <div style={{ maxWidth: 880, margin: '0 auto', background: '#ffffff', borderRadius: 12, padding: '2rem', boxShadow: '0 4px 24px rgba(0,0,0,0.08)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
+          <div>
+            <p className="eyebrow" style={{ margin: 0 }}>DLFR TRANSPARENCY DESK</p>
+            <h1 style={{ margin: '0.2rem 0' }}>Daily Purchase Prices</h1>
+            <p className="muted" style={{ margin: 0 }}>
+              {data?.date ? `Rates recorded for ${data.date}${data.is_fallback ? ' (latest active trading session)' : ''}` : 'Loading rates...'}
+            </p>
+          </div>
+          {onBack && (
+            <button className="btn secondary" onClick={onBack}>← Back to Sign In</button>
+          )}
+        </div>
+
+        {loading && <p className="muted"><LoaderCircle className="spin" size={18}/> Fetching DLFR trading rates...</p>}
+        {err && <div className="alert">{err}</div>}
+
+        {data && !loading && (
+          <>
+            {data.prices.length === 0 ? (
+              <div className="empty">{data.message || 'No purchase transactions recorded yet.'}</div>
+            ) : (
+              <div className="tablecard" style={{ marginTop: '1rem' }}>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Crop</th>
+                      <th style={{ textAlign: 'right' }}>Total Volume (Qtl)</th>
+                      <th style={{ textAlign: 'right' }}>Min Rate (₹/Qtl)</th>
+                      <th style={{ textAlign: 'right' }}>Max Rate (₹/Qtl)</th>
+                      <th style={{ textAlign: 'right' }}>Weighted Avg (₹/Qtl)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.prices.map(p => (
+                      <tr key={p.crop}>
+                        <td><b>{p.crop}</b></td>
+                        <td style={{ textAlign: 'right' }}>{Number(p.total_quantity_qtl).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                        <td style={{ textAlign: 'right' }}>{money(p.min_rate)}</td>
+                        <td style={{ textAlign: 'right' }}>{money(p.max_rate)}</td>
+                        <td style={{ textAlign: 'right', color: '#15803d' }}><b>{money(p.weighted_avg_rate)}</b></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <p className="footnote" style={{ marginTop: '1.5rem' }}>
+              Prices shown reflect actual volume-weighted purchases completed by Dhan Laxmi Foods and Research Centre. Farmer identities and invoice numbers are confidential.
+            </p>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Auth({mode,setMode,auth,setAuth,onSubmit,busy,error,onViewPrices}){
+  return (
+    <div className="authpage">
+      <div className="authvisual">
+        <div className="brand brandlight">
+          <div className="brandmark"><Wheat/></div>
+          <div><b>DLFR</b><span>DHAN LAXMI FOODS<br/>AND RESEARCH CENTRE</span></div>
+        </div>
+        <div className="heroCopy">
+          <p className="eyebrow">BUILT ON TRUST. GROWN WITH CARE.</p>
+          <h1>Every grain.<br/><em>Every record.</em><br/>In one place.</h1>
+          <p>A modern workspace for grain trading, daily accounts, customer records and business clarity.</p>
+          <div className="heroTags">
+            <span><Sprout size={15}/> Crop records</span>
+            <span><ShieldCheck size={15}/> Protected access</span>
+          </div>
+        </div>
+        <div className="authbottom">A better way to manage your grain business.</div>
+      </div>
+      <div className="authformside">
+        <form className="authform" onSubmit={onSubmit}>
+          <div className="smallmark"><Wheat size={19}/></div>
+          <p className="eyebrow">{mode==='login'?'WELCOME BACK':'GET STARTED'}</p>
+          <h2>{mode==='login'?'Sign in to DLFR':'Create your account'}</h2>
+          <p className="muted">{mode==='login'?'Access your business workspace securely.':'New accounts start with Farmer access. The DLFR owner assigns roles.'}</p>
+          {error&&<div className="alert">{error}</div>}
+          {mode==='register'&&<label>Full name<input required minLength="2" value={auth.name} onChange={e=>setAuth({...auth,name:e.target.value})} placeholder="Your full name"/></label>}
+          <label>Email address<input required type="email" value={auth.email} onChange={e=>setAuth({...auth,email:e.target.value})} placeholder="you@business.com"/></label>
+          <label>Password<input required minLength="10" type="password" value={auth.password} onChange={e=>setAuth({...auth,password:e.target.value})} placeholder="At least 10 characters"/></label>
+          <button className="btn full" disabled={busy}>{busy?<LoaderCircle className="spin"/>:null}{mode==='login'?'Sign in':'Create account'}</button>
+          <p className="switch">{mode==='login'?'New to DLFR?':'Already registered?'} <button type="button" onClick={()=>setMode(mode==='login'?'register':'login')}>{mode==='login'?'Create account':'Sign in'}</button></p>
+          
+          <div style={{ marginTop: '1.25rem', paddingTop: '1rem', borderTop: '1px solid #e5e7eb', textAlign: 'center' }}>
+            <button type="button" className="textbtn" onClick={onViewPrices} style={{ fontSize: '0.875rem' }}>
+              🌾 View Daily Purchase Prices →
+            </button>
+          </div>
+          <p className="tiny" style={{ marginTop: '0.75rem' }}>Use a strong, unique password. Never share your login details.</p>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function Dashboard({dash,tx,setPage,onRefresh}){
+  const latest=tx.slice(0,6);
+  return (
+    <>
+      <div className="welcome">
+        <div>
+          <p className="eyebrow">YOUR BUSINESS, IN CLEAR VIEW</p>
+          <h1>Good business starts<br/>with good records.</h1>
+          <p>Track the movement of every quintal and every rupee. Keep bills, balances and daily activity together.</p>
+          <div className="buttonrow">
+            <button className="btn goldbtn" onClick={()=>setPage('purchase')}><Plus size={17}/> Record a purchase</button>
+            <button className="btn secondary" onClick={onRefresh}><RefreshCw size={16}/> Refresh data</button>
+          </div>
+        </div>
+        <div className="wheatart"><Wheat size={100}/><Sprout size={55}/></div>
+      </div>
+      <div className="metricgrid">
+        <Metric label="Total purchases" value={money(dash?.purchases)} icon={ArrowDownToLine} tone="amber"/>
+        <Metric label="Total sales" value={money(dash?.sales)} icon={ArrowUpFromLine} tone="blue"/>
+        <Metric label="Recorded expenses" value={money(dash?.expenses)} icon={Truck} tone="rose"/>
+        <Metric label="Outstanding sales bills" value={money(dash?.outstanding_sales)} icon={Wallet} tone="green"/>
+      </div>
+      <div className="metricgrid secondmetrics">
+        <Metric label="Outstanding purchase bills" value={money(dash?.outstanding_purchases)} icon={BadgeIndianRupee} tone="amber"/>
+        <Metric label="FIFO gross margin estimate" value={dash?.fifo_gross_margin_estimate==null?'Not available':money(dash?.fifo_gross_margin_estimate)} icon={ChartNoAxesCombined} tone="blue"/>
+        <Metric label="Today purchases" value={money(dash?.today?.purchase_total)} icon={CalendarDays} tone="rose"/>
+        <Metric label="Today sales" value={money(dash?.today?.sales_total)} icon={CalendarDays} tone="green"/>
+      </div>
+      <p className="footnote">{dash?.fifo_note||dash?.note||'Business summary.'}</p>
+      <div className="sectionheading">
+        <div><p className="eyebrow">LATEST ACTIVITY</p><h3>Recent transactions</h3></div>
+        <button className="textbtn" onClick={()=>setPage('reports')}>View reports →</button>
+      </div>
+      <TransactionTable rows={latest}/>
+      {!latest.length&&<div className="empty">Your latest purchases and sales will appear here.</div>}
+    </>
+  );
+}
+
+function Metric({label,value,icon:Icon,tone}){
+  return <div className={`metric ${tone||''}`}><div className="metricicon"><Icon size={19}/></div><span>{label}</span><strong>{value??'—'}</strong></div>;
+}
+
+function Field({label,children,wide=false}){
+  return <label className={wide?'field wide':'field'}><span>{label}</span>{children}</label>;
+}
+
+function TransactionPage({kind,rows,api,reload,setError,downloadReceipt,shareReceipt}){
+  const [f,setF]=useState({date:today(),time_text:new Date().toTimeString().slice(0,5),invoice:'',party_name:'',party_kind:kind==='purchase'?'farmer':'company',crop:'Wheat',variety:'',quantity_qtl:'',rate:'',extra_charges:'0',deductions:'0',paid:'0',payment_method:'Cash',notes:''});
+  const total=Math.max(0,Number(f.quantity_qtl||0)*Number(f.rate||0)+Number(f.extra_charges||0)-Number(f.deductions||0));
+
+  async function submit(e){
+    e.preventDefault();
+    setError('');
+    try{
+      await api(`/api/transactions/${kind}`,{
+        method:'POST',
+        body:JSON.stringify({
+          ...f,
+          quantity_qtl:Number(f.quantity_qtl),
+          rate:Number(f.rate),
+          extra_charges:Number(f.extra_charges),
+          deductions:Number(f.deductions),
+          paid:Number(f.paid)
+        })
+      });
+      setF({...f,date:today(),time_text:new Date().toTimeString().slice(0,5),invoice:'',party_name:'',crop:'Wheat',variety:'',quantity_qtl:'',rate:'',extra_charges:'0',deductions:'0',paid:'0',notes:''});
+      await reload();
+    }catch(e){setError(e.message)}
+  }
+
+  return (
+    <>
+      <div className="pageintro">
+        <p className="eyebrow">{kind==='purchase'?'GRAIN INWARD REGISTER':'GRAIN OUTWARD REGISTER'}</p>
+        <h1>{kind==='purchase'?'Record a purchase':'Record a sale'}</h1>
+        <p>Enter all quantities in quintals. The total and outstanding balance are calculated by the server.</p>
+      </div>
+      <form className="formcard" onSubmit={submit}>
+        <div className="fields">
+          <Field label="Date"><input type="date" required value={f.date} onChange={e=>setF({...f,date:e.target.value})}/></Field>
+          <Field label="Time"><input type="time" value={f.time_text} onChange={e=>setF({...f,time_text:e.target.value})}/></Field>
+          <Field label="Invoice (optional)"><input value={f.invoice} maxLength="50" onChange={e=>setF({...f,invoice:e.target.value})} placeholder="Auto-generated if blank"/></Field>
+          <Field label="Farmer / company name"><input required value={f.party_name} onChange={e=>setF({...f,party_name:e.target.value})} placeholder="Must match customer directory name for portal link"/></Field>
+          <Field label="Party type"><select value={f.party_kind} onChange={e=>setF({...f,party_kind:e.target.value})}>{['farmer','company','supplier','other'].map(x=><option key={x}>{x}</option>)}</select></Field>
+          <Field label="Crop"><select value={f.crop} onChange={e=>setF({...f,crop:e.target.value})}>{crops.map(x=><option key={x}>{x}</option>)}</select></Field>
+          <Field label="Variety / grade"><input value={f.variety} onChange={e=>setF({...f,variety:e.target.value})}/></Field>
+          <Field label="Quantity (quintals)"><input type="number" min="0.001" step="0.001" required value={f.quantity_qtl} onChange={e=>setF({...f,quantity_qtl:e.target.value})}/></Field>
+          <Field label="Rate per quintal (₹)"><input type="number" min="0" step="0.01" required value={f.rate} onChange={e=>setF({...f,rate:e.target.value})}/></Field>
+          <Field label="Extra charges (₹)"><input type="number" min="0" step="0.01" value={f.extra_charges} onChange={e=>setF({...f,extra_charges:e.target.value})}/></Field>
+          <Field label="Deductions (₹)"><input type="number" min="0" step="0.01" value={f.deductions} onChange={e=>setF({...f,deductions:e.target.value})}/></Field>
+          <Field label="Paid now (₹)"><input type="number" min="0" max={total} step="0.01" value={f.paid} onChange={e=>setF({...f,paid:e.target.value})}/></Field>
+          <Field label="Payment method"><select value={f.payment_method} onChange={e=>setF({...f,payment_method:e.target.value})}>{['Cash','Bank transfer','UPI','Cheque','Other'].map(x=><option key={x}>{x}</option>)}</select></Field>
+          <Field label="Notes" wide><textarea value={f.notes} onChange={e=>setF({...f,notes:e.target.value})}/></Field>
+        </div>
+        <div className="billpreview">
+          <span>Calculated total</span><strong>{money(total)}</strong>
+          <span>Balance due</span><strong>{money(Math.max(0,total-Number(f.paid||0)))}</strong>
+        </div>
+        <div className="formactions"><button className="btn"><Plus size={16}/> Save {kind}</button></div>
+      </form>
+      <div className="sectionheading">
+        <h3>{kind==='purchase'?'Purchase':'Sales'} history</h3>
+        <span className="count">{rows.length} entries</span>
+      </div>
+      <TransactionTable
+        rows={rows}
+        onReceipt={id=>downloadReceipt(id,false)}
+        onShare={row=>shareReceipt(row,false)}
+        onPayment={async row=>{
+          const amount=window.prompt(`Outstanding balance ${money(row.balance)}. Payment amount (₹):`);
+          if(amount===null)return;
+          if(!Number.isFinite(Number(amount))||Number(amount)<=0){setError('Enter a valid payment amount.');return}
+          try{
+            await api(`/api/transactions/${row.id}/payments`,{
+              method:'POST',
+              body:JSON.stringify({date:today(),amount:Number(amount),method:'Cash',reference:'',notes:'Payment recorded from register'})
+            });
+            await reload();
+          }catch(e){setError(e.message)}
+        }}
+      />
+    </>
+  );
+}
+
+function TransactionTable({rows,onReceipt,onShare,onPayment}){
+  return (
+    <div className="tablecard">
+      <table>
+        <thead>
+          <tr>
+            <th>Date / invoice</th><th>Type</th><th>Party</th><th>Crop</th><th>Quintals</th><th>Rate</th><th>Total</th><th>Paid</th><th>Balance</th>{(onReceipt||onPayment||onShare)&&<th>Actions</th>}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(r=>(
+            <tr key={r.id}>
+              <td>{r.date}<span className="subcell">{r.invoice} {r.time_text}</span></td>
+              <td><span className={`kindtag ${r.kind}`}>{r.kind}</span></td>
+              <td><b>{r.party_name}</b><span className="subcell">{r.party_kind}</span></td>
+              <td>{r.crop}<span className="subcell">{r.variety}</span></td>
+              <td>{Number(r.quantity_qtl).toLocaleString('en-IN')}</td>
+              <td>{money(r.rate)}</td>
+              <td><b>{money(r.total)}</b></td>
+              <td>{money(r.paid)}</td>
+              <td>{money(r.balance)}</td>
+              {(onReceipt||onPayment||onShare)&&(
+                <td className="tableactions">
+                  {onReceipt&&<button className="useraction-btn" onClick={()=>onReceipt(r.id)} title="Download PDF receipt"><Printer size={14}/></button>}
+                  {onShare&&<button className="useraction-btn" onClick={()=>onShare(r)} title="Share receipt or send details to WhatsApp"><MessageCircle size={14}/></button>}
+                  {onPayment&&Number(r.balance)>0&&<button className="useraction-btn" onClick={()=>onPayment(r)} title="Record payment"><Wallet size={14}/></button>}
+                </td>
+              )}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {!rows.length&&<div className="empty">No transactions recorded yet.</div>}
+    </div>
+  );
+}
+
+function ExpensePage({rows,api,reload,setError}){
+  const [f,setF]=useState({date:today(),category:'Transport',amount:'',payee:'',transport_company:'',vehicle:'',notes:''});
+
+  async function submit(e){
+    e.preventDefault();
+    try{
+      await api('/api/expenses',{method:'POST',body:JSON.stringify({...f,amount:Number(f.amount)})});
+      setF({...f,date:today(),amount:'',payee:'',transport_company:'',vehicle:'',notes:''});
+      await reload();
+    }catch(e){setError(e.message)}
+  }
+
+  return (
+    <>
+      <div className="pageintro">
+        <p className="eyebrow">COSTS THAT KEEP THE BUSINESS MOVING</p>
+        <h1>Transport & expenses</h1>
+        <p>Log freight, labour, loading, packaging, vehicle and other operating expenses.</p>
+      </div>
+      <form className="formcard" onSubmit={submit}>
+        <div className="fields">
+          <Field label="Date"><input type="date" required value={f.date} onChange={e=>setF({...f,date:e.target.value})}/></Field>
+          <Field label="Category"><select value={f.category} onChange={e=>setF({...f,category:e.target.value})}>{['Transport','Driver','Loading / labour','Packaging','Storage','Fuel','Maintenance','Utilities','Other'].map(x=><option key={x}>{x}</option>)}</select></Field>
+          <Field label="Amount (₹)"><input type="number" min="0.01" step="0.01" required value={f.amount} onChange={e=>setF({...f,amount:e.target.value})}/></Field>
+          <Field label="Driver / payee"><input value={f.payee} onChange={e=>setF({...f,payee:e.target.value})}/></Field>
+          <Field label="Transport business"><input value={f.transport_company} onChange={e=>setF({...f,transport_company:e.target.value})}/></Field>
+          <Field label="Vehicle number"><input value={f.vehicle} onChange={e=>setF({...f,vehicle:e.target.value})}/></Field>
+          <Field label="Notes" wide><textarea value={f.notes} onChange={e=>setF({...f,notes:e.target.value})}/></Field>
+        </div>
+        <div className="formactions"><button className="btn"><Plus size={16}/> Save expense</button></div>
+      </form>
+      <div className="sectionheading"><h3>Expense history</h3><span className="count">{rows.length} entries</span></div>
+      <div className="tablecard">
+        <table>
+          <thead>
+            <tr><th>Date</th><th>Category</th><th>Payee</th><th>Transport company</th><th>Vehicle</th><th>Amount</th></tr>
+          </thead>
+          <tbody>
+            {rows.map(r=><tr key={r.id}><td>{r.date}</td><td>{r.category}</td><td>{r.payee}</td><td>{r.transport_company}</td><td>{r.vehicle}</td><td>{money(r.amount)}</td></tr>)}
+          </tbody>
+        </table>
+        {!rows.length&&<div className="empty">No expenses recorded yet.</div>}
+      </div>
+    </>
+  );
+}
+
+function PartiesPage({rows,api,reload,setError}){
+  const [f,setF]=useState({name:'',kind:'farmer',phone:'',email:'',address:''});
+
+  async function submit(e){
+    e.preventDefault();
+    try{
+      await api('/api/parties',{method:'POST',body:JSON.stringify(f)});
+      setF({name:'',kind:'farmer',phone:'',email:'',address:''});
+      await reload();
+    }catch(e){setError(e.message)}
+  }
+
+  return (
+    <>
+      <div className="pageintro">
+        <p className="eyebrow">YOUR NETWORK</p>
+        <h1>Farmers & companies</h1>
+        <p>Keep a clean directory of farmers, suppliers and company customers. Use the exact customer name on transaction bills to match the portal record.</p>
+      </div>
+      <form className="formcard" onSubmit={submit}>
+        <div className="fields">
+          <Field label="Name"><input required value={f.name} onChange={e=>setF({...f,name:e.target.value})}/></Field>
+          <Field label="Account type"><select value={f.kind} onChange={e=>setF({...f,kind:e.target.value})}>{['farmer','company','supplier','both','other'].map(x=><option key={x}>{x}</option>)}</select></Field>
+          <Field label="Phone"><input value={f.phone} onChange={e=>setF({...f,phone:e.target.value})}/></Field>
+          <Field label="Email"><input type="email" value={f.email} onChange={e=>setF({...f,email:e.target.value})}/></Field>
+          <Field label="Address" wide><input value={f.address} onChange={e=>setF({...f,address:e.target.value})}/></Field>
+        </div>
+        <div className="formactions"><button className="btn"><Plus size={16}/> Save customer</button></div>
+      </form>
+      <div className="sectionheading"><h3>Customer directory</h3><span className="count">{rows.length} records</span></div>
+      <div className="tablecard">
+        <table>
+          <thead>
+            <tr><th>Name</th><th>Type</th><th>Phone</th><th>Email</th><th>Address</th></tr>
+          </thead>
+          <tbody>
+            {rows.map(r=><tr key={r.id}><td><b>{r.name}</b></td><td>{r.kind}</td><td>{r.phone}</td><td>{r.email}</td><td>{r.address}</td></tr>)}
+          </tbody>
+        </table>
+        {!rows.length&&<div className="empty">Add your first farmer, supplier or company.</div>}
+      </div>
+    </>
+  );
+}
+
+function WorkersPage({workers,accounts,api,reload,setError}){
+  const [f,setF]=useState({name:'',phone:'',job_title:'General worker',daily_wage:'500',linked_user_id:''});
+  const [attendance,setAttendance]=useState({worker_id:'',date:today(),status:'present',overtime_hours:'0',notes:''});
+  const [month,setMonth]=useState(monthNow());
+  const [payroll,setPayroll]=useState(null);
+  const [saving,setSaving]=useState(false);
+
+  async function loadPayroll(m=month){
+    try{setPayroll(await api(`/api/payroll?month=${m}`))}catch(e){setError(e.message)}
+  }
+
+  useEffect(()=>{loadPayroll(month)},[month]);
+  useEffect(()=>{
+    if(!attendance.worker_id&&workers.find(w=>w.is_active)){
+      setAttendance(a=>({...a,worker_id:String(workers.find(w=>w.is_active).id)}));
+    }
+  },[workers]);
+
+  async function addWorker(e){
+    e.preventDefault();
+    try{
+      await api('/api/workers',{method:'POST',body:JSON.stringify({...f,daily_wage:Number(f.daily_wage),linked_user_id:f.linked_user_id?Number(f.linked_user_id):null})});
+      setF({name:'',phone:'',job_title:'General worker',daily_wage:'500',linked_user_id:''});
+      await reload();
+    }catch(e){setError(e.message)}
+  }
+
+  async function mark(e){
+    e.preventDefault();
+    try{
+      await api('/api/attendance',{method:'POST',body:JSON.stringify({...attendance,worker_id:Number(attendance.worker_id),overtime_hours:Number(attendance.overtime_hours)})});
+      await loadPayroll();
+    }catch(e){setError(e.message)}
+  }
+
+  async function pay(row){
+    const amount=window.prompt(`Salary due for ${row.name}: ${money(row.balance)}. Enter amount to pay:`);
+    if(amount===null)return;
+    if(Number(amount)<=0){setError('Enter a positive payment amount.');return}
+    try{
+      setSaving(true);
+      await api('/api/wage-payments',{method:'POST',body:JSON.stringify({worker_id:row.worker_id,date:today(),period_month:month,amount:Number(amount),method:'Cash',reference:'',notes:'Payroll payment'})});
+      await loadPayroll();
+    }catch(e){setError(e.message)}finally{setSaving(false)}
+  }
+
+  return (
+    <>
+      <div className="pageintro">
+        <p className="eyebrow">TEAM & DAILY WAGES</p>
+        <h1>Workers & attendance</h1>
+        <p>Add workers, mark daily attendance and track earned wages and payments by month.</p>
+      </div>
+      <form className="formcard" onSubmit={addWorker}>
+        <h3>Add a worker</h3>
+        <div className="fields">
+          <Field label="Worker name"><input required minLength="2" value={f.name} onChange={e=>setF({...f,name:e.target.value})}/></Field>
+          <Field label="Phone"><input value={f.phone} onChange={e=>setF({...f,phone:e.target.value})}/></Field>
+          <Field label="Job title"><input value={f.job_title} onChange={e=>setF({...f,job_title:e.target.value})}/></Field>
+          <Field label="Daily wage (₹)"><input type="number" min="0" step="0.01" required value={f.daily_wage} onChange={e=>setF({...f,daily_wage:e.target.value})}/></Field>
+          <Field label="Optional worker login"><select value={f.linked_user_id} onChange={e=>setF({...f,linked_user_id:e.target.value})}><option value="">No portal login</option>{accounts.filter(a=>a.role==='worker'&&!workers.some(w=>w.linked_user_id===a.id)).map(a=><option key={a.id} value={a.id}>{a.name} · {a.email}</option>)}</select></Field>
+        </div>
+        <div className="formactions"><button className="btn"><Plus size={16}/> Add worker</button></div>
+      </form>
+      <form className="formcard" onSubmit={mark}>
+        <h3>Mark attendance</h3>
+        <div className="fields">
+          <Field label="Worker"><select required value={attendance.worker_id} onChange={e=>setAttendance({...attendance,worker_id:e.target.value})}>{workers.filter(w=>w.is_active).map(w=><option key={w.id} value={w.id}>{w.name}</option>)}</select></Field>
+          <Field label="Date"><input type="date" required value={attendance.date} onChange={e=>setAttendance({...attendance,date:e.target.value})}/></Field>
+          <Field label="Attendance"><select value={attendance.status} onChange={e=>setAttendance({...attendance,status:e.target.value})}><option value="present">Present (1 day)</option><option value="half">Half day (0.5)</option><option value="absent">Absent (0)</option></select></Field>
+          <Field label="Overtime hours (record only)"><input type="number" min="0" max="24" step="0.25" value={attendance.overtime_hours} onChange={e=>setAttendance({...attendance,overtime_hours:e.target.value})}/></Field>
+          <Field label="Notes" wide><input value={attendance.notes} onChange={e=>setAttendance({...attendance,notes:e.target.value})}/></Field>
+        </div>
+        <div className="formactions"><button className="btn"><ClipboardCheck size={16}/> Save attendance</button></div>
+      </form>
+      <div className="sectionheading"><h3>Payroll summary</h3><span className="count">{month}</span></div>
+      <div className="formcard">
+        <div className="fields"><Field label="Payroll month"><input type="month" value={month} onChange={e=>setMonth(e.target.value)}/></Field></div>
+        <div className="metricgrid">
+          <Metric label="Wages earned" value={money(payroll?.total_earned)} icon={Wallet} tone="amber"/>
+          <Metric label="Wages paid" value={money(payroll?.total_paid)} icon={BadgeIndianRupee} tone="blue"/>
+          <Metric label="Wages outstanding" value={money(payroll?.total_balance)} icon={ChartNoAxesCombined} tone="rose"/>
+        </div>
+      </div>
+      <div className="tablecard">
+        <table>
+          <thead>
+            <tr><th>Worker</th><th>Attendance units</th><th>Daily wage</th><th>Earned</th><th>Paid</th><th>Balance</th><th>Action</th></tr>
+          </thead>
+          <tbody>
+            {(payroll?.workers||[]).map(r=>(
+              <tr key={r.worker_id}>
+                <td><b>{r.name}</b><span className="subcell">{r.job_title}</span></td>
+                <td>{r.present_days} ({r.attendance_days} entries)</td>
+                <td>{money(r.daily_wage)}</td>
+                <td>{money(r.earned)}</td>
+                <td>{money(r.paid)}</td>
+                <td>{money(r.balance)}</td>
+                <td><button className="useraction-btn" disabled={saving||Number(r.balance)<=0} onClick={()=>pay(r)}><Wallet size={14}/> Pay</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {!(payroll?.workers||[]).length&&<div className="empty">Add workers and mark attendance to calculate payroll.</div>}
+      </div>
+      <p className="footnote">Attendance wages use present = 1 day, half = 0.5 day, absent = 0. Overtime hours are recorded but not included in wage calculations until an overtime rate is configured.</p>
+    </>
+  );
+}
+
+function MandiPage(){
+  const [state,setState]=useState('Rajasthan');
+  const [district,setDistrict]=useState('Kota');
+  const [commodity,setCommodity]=useState('Wheat');
+  const [day,setDay]=useState('today');
+  const [result,setResult]=useState(null);
+  const [loading,setLoading]=useState(false);
+  const [error,setError]=useState('');
+
+  async function lookup(e){
+    e?.preventDefault();
+    setLoading(true);
+    setError('');
+    try{
+      const p=new URLSearchParams({state,district,commodity,day});
+      const res=await fetch(`${API}/api/mandi/prices?${p}`);
+      const data=await res.json();
+      if(!res.ok)throw new Error(data.detail||'Mandi request failed');
+      setResult(data);
+    }catch(e){setError(e.message)}finally{setLoading(false)}
+  }
+
+  return (
+    <>
+      <div className="pageintro">
+        <p className="eyebrow">OFFICIAL MARKET INFORMATION</p>
+        <h1>Mandi price desk</h1>
+        <p>Look up published government mandi records by location, crop and date. No invented prices are shown.</p>
+      </div>
+      <form className="formcard" onSubmit={lookup}>
+        <div className="fields">
+          <Field label="State"><input required value={state} onChange={e=>setState(e.target.value)}/></Field>
+          <Field label="District"><input required value={district} onChange={e=>setDistrict(e.target.value)}/></Field>
+          <Field label="Commodity"><select value={commodity} onChange={e=>setCommodity(e.target.value)}>{crops.map(x=><option key={x}>{x}</option>)}</select></Field>
+          <Field label="Date range"><select value={day} onChange={e=>setDay(e.target.value)}><option value="yesterday">Yesterday</option><option value="today">Today</option><option value="tomorrow">Tomorrow</option></select></Field>
+        </div>
+        <div className="formactions"><button className="btn" disabled={loading}>{loading?<LoaderCircle className="spin"/>:<Search size={16}/>} Check prices</button></div>
+      </form>
+      {error&&<div className="alert">{error}</div>}
+      {result&&(
+        <div className="formcard mandi-results">
+          <div className="sectionheading">
+            <h3>{result.commodity} · {result.district}</h3>
+            <span className="count">{result.date}</span>
+          </div>
+          <p>{result.message}</p>
+          {result.source&&<p className="footnote">Source: {result.source}</p>}
+          {result.prices?.length?(
+            <div className="tablecard">
+              <table>
+                <thead>
+                  <tr><th>Market</th><th>Variety</th><th>Minimum</th><th>Modal</th><th>Maximum</th><th>Published date</th></tr>
+                </thead>
+                <tbody>
+                  {result.prices.map((r,i)=>(
+                    <tr key={`${r.market}-${i}`}>
+                      <td>{r.market}</td>
+                      <td>{r.variety}</td>
+                      <td>{money(r.min_price)}</td>
+                      <td><b>{money(r.modal_price)}</b></td>
+                      <td>{money(r.max_price)}</td>
+                      <td>{r.arrival_date}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ):(
+            <div className="empty">No official rates to show for this selection.</div>
+          )}
+        </div>
+      )}
+      <div className="adminnote">
+        <CloudSun size={17}/>
+        <span>Tomorrow's mandi price cannot be known with certainty. Future-date lookups are explicitly marked unavailable instead of showing fabricated forecasts. Live historical/current requests require a data.gov.in API key in the backend .env file.</span>
+      </div>
+    </>
+  );
+}
+
+function Reports({api,token,tx,expenses,from,to,setFrom,setTo,downloadReceipt,shareReceipt}){
+  const [summary,setSummary]=useState(null);
+  const [loading,setLoading]=useState(false);
+  const within=r=>r.date>=from&&r.date<=to;
+  const purchases=tx.filter(r=>r.kind==='purchase'&&within(r)),sales=tx.filter(r=>r.kind==='sale'&&within(r)),ex=expenses.filter(within);
+
+  async function load(){
+    setLoading(true);
+    try{setSummary(await api(`/api/reports/summary?start=${from}&end=${to}`))}catch(e){setSummary(null)}finally{setLoading(false)}
+  }
+
+  useEffect(()=>{if(from&&to&&from<=to)load()},[from,to]);
+
+  function exportCsv(){
+    const all=[...purchases,...sales].map(r=>({date:r.date,time:r.time_text,kind:r.kind,invoice:r.invoice,party:r.party_name,crop:r.crop,quantity_qtl:r.quantity_qtl,rate:r.rate,total:r.total,paid:r.paid,balance:r.balance}));
+    downloadCSV(all,`DLFR-transactions-${from}-to-${to}.csv`);
+  }
+
+  return (
+    <>
+      <div className="pageintro">
+        <p className="eyebrow">CLEAR NUMBERS. BETTER DECISIONS.</p>
+        <h1>Date-wise reports & accounts</h1>
+        <p>Review purchase/sales totals, recorded expenses, unpaid balances and an indicative FIFO gross margin where data allows.</p>
+      </div>
+      <div className="formcard">
+        <div className="fields">
+          <Field label="From date"><input type="date" value={from} onChange={e=>setFrom(e.target.value)}/></Field>
+          <Field label="To date"><input type="date" value={to} onChange={e=>setTo(e.target.value)}/></Field>
+        </div>
+        <div className="formactions">
+          <button className="btn" onClick={exportCsv}><Download size={16}/> Export transactions CSV</button>
+          <button className="btn secondary" onClick={()=>downloadJSON({summary,transactions:[...purchases,...sales],expenses:ex},`DLFR-${from}-to-${to}.json`)}><Download size={16}/> Export JSON</button>
+          <button className="btn secondary" onClick={()=>window.print()}><Printer size={16}/> Print report</button>
+        </div>
+      </div>
+      {loading&&<p className="muted">Calculating report…</p>}
+      <div className="metricgrid">
+        <Metric label="Purchases in period" value={money(summary?.purchase_total??sum(purchases,'total'))} icon={ArrowDownToLine} tone="amber"/>
+        <Metric label="Sales in period" value={money(summary?.sales_total??sum(sales,'total'))} icon={ArrowUpFromLine} tone="blue"/>
+        <Metric label="Expenses in period" value={money(summary?.expense_total??sum(ex,'amount'))} icon={Truck} tone="rose"/>
+        <Metric label="FIFO gross margin estimate" value={summary?.fifo_gross_margin_estimate==null?(summary?'Not available':'—'):money(summary.fifo_gross_margin_estimate)} icon={ChartNoAxesCombined} tone="green"/>
+      </div>
+      <div className="metricgrid secondmetrics">
+        <Metric label="Purchase balance" value={money(summary?.outstanding_purchase_bills)} icon={Wallet} tone="amber"/>
+        <Metric label="Sales balance" value={money(summary?.outstanding_sale_bills)} icon={Wallet} tone="blue"/>
+        <Metric label="Purchase volume" value={`${Number(summary?.purchase_quantity_qtl||0).toLocaleString('en-IN')} qtl`} icon={Wheat} tone="rose"/>
+        <Metric label="Sales volume" value={`${Number(summary?.sale_quantity_qtl||0).toLocaleString('en-IN')} qtl`} icon={Wheat} tone="green"/>
+      </div>
+      {summary&&<p className="footnote">{summary.fifo_note} {summary.accounting_note}</p>}
+      <div className="sectionheading"><h3>Purchases & sales</h3><span className="count">{purchases.length+sales.length} records</span></div>
+      <TransactionTable rows={[...purchases,...sales].sort((a,b)=>b.date.localeCompare(a.date))} onReceipt={id=>downloadReceipt(id,false)} onShare={row=>shareReceipt(row,false)}/>
+      <div className="sectionheading"><h3>Expenses</h3><span className="count">{ex.length} records</span></div>
+      <div className="tablecard">
+        <table>
+          <thead><tr><th>Date</th><th>Category</th><th>Payee</th><th>Transport company</th><th>Amount</th></tr></thead>
+          <tbody>{ex.map(r=><tr key={r.id}><td>{r.date}</td><td>{r.category}</td><td>{r.payee}</td><td>{r.transport_company}</td><td>{money(r.amount)}</td></tr>)}</tbody>
+        </table>
+        {!ex.length&&<div className="empty">No expenses for this period.</div>}
+      </div>
+    </>
+  );
+}
+
 function sum(arr,k){return arr.reduce((a,r)=>a+Number(r[k]||0),0)}
-function SettingsPage({user,users,setUsers,parties,api,setError,setNotice,onExport}){const [savingId,setSavingId]=useState(null);const [links,setLinks]=useState([]);const [linkError,setLinkError]=useState('');const [audit,setAudit]=useState([]);const [reportBusy,setReportBusy]=useState(false);async function loadAdmin(){if(user.role==='owner'){try{setLinks(await api('/api/admin/party-links'));setAudit(await api('/api/admin/audit-log?limit=30'))}catch(e){setLinkError(e.message)}}}useEffect(()=>{loadAdmin()},[user.role]);async function changeRole(row,role){if(row.role===role)return;setSavingId(row.id);setError('');try{const updated=await api(`/api/admin/users/${row.id}/role`,{method:'PATCH',body:JSON.stringify({role})});setUsers(current=>current.map(u=>u.id===updated.id?updated:u));setLinks(current=>current.map(u=>u.user_id===updated.id&& !['farmer','company','supplier'].includes(role)?{...u,party_id:null,party_name:null}:u))}catch(e){setError(e.message)}finally{setSavingId(null)}}async function changeStatus(row,is_active){setSavingId(row.id);setError('');try{const updated=await api(`/api/admin/users/${row.id}/status`,{method:'PATCH',body:JSON.stringify({is_active})});setUsers(current=>current.map(u=>u.id===updated.id?updated:u))}catch(e){setError(e.message)}finally{setSavingId(null)}}async function linkParty(row,party_id){setSavingId(row.user_id);setLinkError('');try{const data=await api(`/api/admin/users/${row.user_id}/party-link`,{method:'PUT',body:JSON.stringify({party_id:party_id?Number(party_id):null})});setLinks(current=>current.map(x=>x.user_id===row.user_id?{...x,party_id:data.party_id,party_name:data.party_name||null}:x));setNotice(data.party_name?`Portal linked to ${data.party_name}.`:'Portal link removed.')}catch(e){setLinkError(e.message)}finally{setSavingId(null)}}async function sendReport(period){setReportBusy(true);setError('');setNotice('');try{const data=await api(`/api/reports/email-now?period=${period}`,{method:'POST'});setNotice(`Report sent to ${data.sent_to} (${data.start} to ${data.end}).`)}catch(e){setError(e.message)}finally{setReportBusy(false)}}return <><div className="pageintro"><p className="eyebrow">BUSINESS CONFIGURATION</p><h1>DLFR settings</h1><p>Manage people, portal links, email report configuration, audit activity and data export.</p></div><div className="settingsgrid"><div className="settingcard"><ShieldCheck size={24}/><h3>Account</h3><p>{user.name}</p><small>{user.email}</small><span className="status">Authenticated · {user.role}</span></div><div className="settingcard"><Download size={24}/><h3>Data export</h3><p>Download a workspace JSON snapshot. Owners receive the full export including users, registers, payments, attendance and wage records.</p><button className="btn secondary" onClick={onExport}>Export workspace backup</button></div><div className="settingcard"><Mail size={24}/><h3>Email reports</h3><p>Send a daily or month-to-date report using SMTP settings from backend/.env.</p><div className="buttonrow"><button className="btn secondary" disabled={reportBusy||user.role!=='owner'} onClick={()=>sendReport('today')}>Send daily</button><button className="btn secondary" disabled={reportBusy||user.role!=='owner'} onClick={()=>sendReport('month')}>Send month-to-date</button></div></div></div>{user.role==='owner'&&<><div className="sectionheading adminsectiontitle"><div><p className="eyebrow">OWNER CONTROL</p><h3><UserCog size={18}/> People & access</h3></div><span className="count">{users.length} accounts</span></div><div className="adminnote"><ShieldCheck size={17}/><span>Public registration only creates Farmer accounts. Only the owner can change roles, activate/deactivate accounts, or assign which DLFR party record a portal login can view. Owner access cannot be reassigned from this screen.</span></div><div className="tablecard admin-table-wrap"><table className="usertable"><thead><tr><th>User</th><th>Role</th><th>Status</th><th>Joined</th><th>Access controls</th></tr></thead><tbody>{users.map(row=><tr key={row.id}><td><b>{row.name}</b><span className="subcell">{row.email}</span></td><td><select aria-label={`Role for ${row.name}`} className="userrole-select" value={row.role==='owner'?'owner':row.role} disabled={row.role==='owner'||savingId===row.id} onChange={e=>changeRole(row,e.target.value)}>{row.role==='owner'&&<option value="owner">Owner</option>}{[['admin','Administrator'],['farmer','Farmer'],['company','Company'],['worker','Worker'],['supplier','Supplier']].map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></td><td><span className={`user-status-pill ${row.is_active?'active':'inactive'}`}>{row.is_active?'Active':'Disabled'}</span></td><td>{row.created_at?new Date(row.created_at).toLocaleDateString('en-IN'):'—'}</td><td>{row.role==='owner'?<span className="ownerlocked"><ShieldCheck size={14}/> Protected</span>:<button className="useraction-btn" disabled={savingId===row.id} onClick={()=>changeStatus(row,!row.is_active)}>{row.is_active?<><UserX size={14}/> Disable</>:<><UserCheck size={14}/> Activate</>}</button>}</td></tr>)}</tbody></table></div><div className="sectionheading"><div><p className="eyebrow">PRIVATE CUSTOMER ACCESS</p><h3><Link2 size={18}/> Link portal accounts</h3></div><span className="count">{links.length} eligible accounts</span></div><p className="muted">Choose the customer record for each Farmer, Company or Supplier login. The portal exposes transactions matching that linked customer name only.</p>{linkError&&<div className="alert">{linkError}</div>}<div className="tablecard"><table><thead><tr><th>Portal account</th><th>Role</th><th>Linked customer record</th></tr></thead><tbody>{links.map(row=><tr key={row.user_id}><td><b>{row.user_name}</b><span className="subcell">{row.email}</span></td><td>{row.role}</td><td><select value={row.party_id||''} className="userrole-select" disabled={savingId===row.user_id} onChange={e=>linkParty(row,e.target.value)}><option value="">Not linked</option>{parties.filter(p=>['farmer','company','supplier','both'].includes(p.kind)).map(p=><option key={p.id} value={p.id}>{p.name} · {p.kind}</option>)}</select></td></tr>)}</tbody></table>{!links.length&&<div className="empty">Create Farmer, Company or Supplier logins; they will appear here.</div>}</div><div className="sectionheading"><div><p className="eyebrow">SECURITY HISTORY</p><h3><Clock3 size={18}/> Recent audit events</h3></div></div><div className="tablecard"><table><thead><tr><th>Time</th><th>Action</th><th>Record</th><th>Details</th></tr></thead><tbody>{audit.map(r=><tr key={r.id}><td>{r.created_at?new Date(r.created_at).toLocaleString('en-IN'):'—'}</td><td>{r.action}</td><td>{r.entity} {r.entity_id||''}</td><td>{r.details}</td></tr>)}</tbody></table>{!audit.length&&<div className="empty">Admin actions will appear here.</div>}</div><p className="footnote">Account security: role changes and account status changes are enforced server-side. For public hosting, use HTTPS, a strong JWT secret, automated DB backups, and security testing.</p></>}{user.role!=='owner'&&<div className="alert">Only the owner account can manage people, portal links, or email reports.</div>}</>}
-function Portal({user,data,logout,error,refresh,downloadReceipt,shareReceipt}){if(!data)return <div className="authpage"><div className="authform"><LoaderCircle className="spin"/> Loading customer portal…</div></div>;if(user.role==='worker')return <main className="portal portalwide"><div className="portalhead"><div className="brandmark"><Wheat/></div><div><p className="eyebrow">DLFR WORKER PORTAL</p><h1>Hello, {user.name}</h1><p>View your linked attendance and wage payment records.</p></div><button className="btn secondary" onClick={logout}><LogOut size={16}/> Sign out</button></div>{error&&<div className="alert">{error}</div>}{!data.linked?<div className="alert">{data.message}</div>:<><div className="metricgrid"><Metric label="Daily wage" value={money(data.worker.daily_wage)} icon={Wallet} tone="amber"/><Metric label="Wages earned" value={money(data.total_wages_earned)} icon={FileText} tone="blue"/><Metric label="Wages paid" value={money(data.total_wages_paid)} icon={BadgeIndianRupee} tone="green"/><Metric label="Wage balance" value={money(data.wages_balance)} icon={Wallet} tone="rose"/><Metric label="Attendance units" value={data.attendance_units||'0'} icon={ClipboardCheck} tone="amber"/></div><div className="sectionheading"><h3>Attendance</h3></div><div className="tablecard"><table><thead><tr><th>Date</th><th>Status</th><th>Overtime hours</th></tr></thead><tbody>{data.attendance.map((a,i)=><tr key={i}><td>{a.date}</td><td>{a.status}</td><td>{a.overtime_hours}</td></tr>)}</tbody></table>{!data.attendance.length&&<div className="empty">No attendance records assigned yet.</div>}</div><div className="sectionheading"><h3>Wage payments</h3></div><div className="tablecard"><table><thead><tr><th>Payment date</th><th>Period</th><th>Amount</th><th>Method</th></tr></thead><tbody>{data.wage_payments.map((p,i)=><tr key={i}><td>{p.date}</td><td>{p.period_month}</td><td>{money(p.amount)}</td><td>{p.method}</td></tr>)}</tbody></table></div></>}<button className="btn secondary" onClick={refresh}><RefreshCw size={16}/> Refresh records</button></main>;return <main className="portal portalwide"><div className="portalhead"><div className="brandmark"><Wheat/></div><div><p className="eyebrow">DLFR CUSTOMER PORTAL · {user.role.toUpperCase()}</p><h1>Welcome, {user.name}</h1><p>View only the business records DLFR linked to your account.</p></div><button className="btn secondary" onClick={logout}><LogOut size={16}/> Sign out</button></div>{error&&<div className="alert">{error}</div>}{!data.linked?<div className="alert">{data.message||'Your account is not linked yet.'}</div>:<><div className="metricgrid"><Metric label="Purchased by DLFR" value={money(data.purchase_total)} icon={ArrowDownToLine} tone="amber"/><Metric label="Sold to you" value={money(data.sale_total)} icon={ArrowUpFromLine} tone="blue"/><Metric label="Purchase payment total" value={money(data.purchase_paid)} icon={Wallet} tone="green"/><Metric label="Sales paid total" value={money(data.sale_paid)} icon={BadgeIndianRupee} tone="rose"/><Metric label="Purchase balance" value={money(data.purchase_balance)} icon={FileText} tone="amber"/><Metric label="Sales balance" value={money(data.sale_balance)} icon={Wallet} tone="blue"/></div><div className="sectionheading"><h3>Your purchases & sales</h3><span className="count">{data.transactions.length} bills</span></div><TransactionTable rows={data.transactions} onReceipt={id=>downloadReceipt(id,true)} onShare={row=>shareReceipt(row,true)}/><div className="sectionheading"><h3>Your payment records</h3><span className="count">{data.payments.length} payments</span></div><div className="tablecard"><table><thead><tr><th>Date</th><th>Invoice ID</th><th>Amount</th><th>Method</th><th>Reference</th></tr></thead><tbody>{data.payments.map(p=><tr key={p.id}><td>{p.date}</td><td>{p.transaction_id}</td><td>{money(p.amount)}</td><td>{p.method}</td><td>{p.reference}</td></tr>)}</tbody></table>{!data.payments.length&&<div className="empty">No separate payment ledger entries yet. Older bills may show a paid amount without a detailed ledger.</div>}</div></>}<button className="btn secondary" onClick={refresh}><RefreshCw size={16}/> Refresh records</button><p className="footnote">For corrections or missing records, contact DLFR. Do not share your portal login with others.</p></main>}
-function downloadJSON(data,name){const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});downloadBlob(blob,name)}function downloadCSV(rows,name){if(!rows.length){alert('No transaction rows to export for this date range.');return}const headers=Object.keys(rows[0]);const quote=v=>`"${String(v??'').replaceAll('"','""')}"`;const csv=[headers.join(','),...rows.map(r=>headers.map(k=>quote(r[k])).join(','))].join('\r\n');downloadBlob(new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'}),name)}function downloadBlob(blob,name){const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000)}
+
+function SettingsPage({user,users,setUsers,parties,api,setError,setNotice,onExport}){
+  const [savingId,setSavingId]=useState(null);
+  const [links,setLinks]=useState([]);
+  const [linkError,setLinkError]=useState('');
+  const [audit,setAudit]=useState([]);
+  const [reportBusy,setReportBusy]=useState(false);
+
+  async function loadAdmin(){
+    if(user.role==='owner'){
+      try{
+        setLinks(await api('/api/admin/party-links'));
+        setAudit(await api('/api/admin/audit-log?limit=30'));
+      }catch(e){setLinkError(e.message)}
+    }
+  }
+
+  useEffect(()=>{loadAdmin()},[user.role]);
+
+  async function changeRole(row,role){
+    if(row.role===role)return;
+    setSavingId(row.id);
+    setError('');
+    try{
+      const updated=await api(`/api/admin/users/${row.id}/role`,{method:'PATCH',body:JSON.stringify({role})});
+      setUsers(current=>current.map(u=>u.id===updated.id?updated:u));
+      setLinks(current=>current.map(u=>u.user_id===updated.id&& !['farmer','company','supplier'].includes(role)?{...u,party_id:null,party_name:null}:u));
+    }catch(e){setError(e.message)}finally{setSavingId(null)}
+  }
+
+  async function changeStatus(row,is_active){
+    setSavingId(row.id);
+    setError('');
+    try{
+      const updated=await api(`/api/admin/users/${row.id}/status`,{method:'PATCH',body:JSON.stringify({is_active})});
+      setUsers(current=>current.map(u=>u.id===updated.id?updated:u));
+    }catch(e){setError(e.message)}finally{setSavingId(null)}
+  }
+
+  async function linkParty(row,party_id){
+    setSavingId(row.user_id);
+    setLinkError('');
+    try{
+      const data=await api(`/api/admin/users/${row.user_id}/party-link`,{method:'PUT',body:JSON.stringify({party_id:party_id?Number(party_id):null})});
+      setLinks(current=>current.map(x=>x.user_id===row.user_id?{...x,party_id:data.party_id,party_name:data.party_name||null}:x));
+      setNotice(data.party_name?`Portal linked to ${data.party_name}.`:'Portal link removed.');
+    }catch(e){setLinkError(e.message)}finally{setSavingId(null)}
+  }
+
+  async function sendReport(period){
+    setReportBusy(true);
+    setError('');
+    setNotice('');
+    try{
+      const data=await api(`/api/reports/email-now?period=${period}`,{method:'POST'});
+      setNotice(`Report sent to ${data.sent_to} (${data.start} to ${data.end}).`);
+    }catch(e){setError(e.message)}finally{setReportBusy(false)}
+  }
+
+  return (
+    <>
+      <div className="pageintro">
+        <p className="eyebrow">BUSINESS CONFIGURATION</p>
+        <h1>DLFR settings</h1>
+        <p>Manage people, portal links, email report configuration, audit activity and data export.</p>
+      </div>
+      <div className="settingsgrid">
+        <div className="settingcard"><ShieldCheck size={24}/><h3>Account</h3><p>{user.name}</p><small>{user.email}</small><span className="status">Authenticated · {user.role}</span></div>
+        <div className="settingcard"><Download size={24}/><h3>Data export</h3><p>Download a workspace JSON snapshot. Owners receive the full export including users, registers, payments, attendance and wage records.</p><button className="btn secondary" onClick={onExport}>Export workspace backup</button></div>
+        <div className="settingcard"><Mail size={24}/><h3>Email reports</h3><p>Send a daily or month-to-date report using SMTP settings from backend/.env.</p><div className="buttonrow"><button className="btn secondary" disabled={reportBusy||user.role!=='owner'} onClick={()=>sendReport('today')}>Send daily</button><button className="btn secondary" disabled={reportBusy||user.role!=='owner'} onClick={()=>sendReport('month')}>Send month-to-date</button></div></div>
+      </div>
+      {user.role==='owner'&&(
+        <>
+          <div className="sectionheading adminsectiontitle">
+            <div><p className="eyebrow">OWNER CONTROL</p><h3><UserCog size={18}/> People & access</h3></div>
+            <span className="count">{users.length} accounts</span>
+          </div>
+          <div className="adminnote">
+            <ShieldCheck size={17}/>
+            <span>Public registration only creates Farmer accounts. Only the owner can change roles, activate/deactivate accounts, or assign which DLFR party record a portal login can view. Owner access cannot be reassigned from this screen.</span>
+          </div>
+          <div className="tablecard admin-table-wrap">
+            <table className="usertable">
+              <thead><tr><th>User</th><th>Role</th><th>Status</th><th>Joined</th><th>Access controls</th></tr></thead>
+              <tbody>
+                {users.map(row=>(
+                  <tr key={row.id}>
+                    <td><b>{row.name}</b><span className="subcell">{row.email}</span></td>
+                    <td>
+                      <select aria-label={`Role for ${row.name}`} className="userrole-select" value={row.role==='owner'?'owner':row.role} disabled={row.role==='owner'||savingId===row.id} onChange={e=>changeRole(row,e.target.value)}>
+                        {row.role==='owner'&&<option value="owner">Owner</option>}
+                        {[['admin','Administrator'],['farmer','Farmer'],['company','Company'],['worker','Worker'],['supplier','Supplier']].map(([value,label])=><option key={value} value={value}>{label}</option>)}
+                      </select>
+                    </td>
+                    <td><span className={`user-status-pill ${row.is_active?'active':'inactive'}`}>{row.is_active?'Active':'Disabled'}</span></td>
+                    <td>{row.created_at?new Date(row.created_at).toLocaleDateString('en-IN'):'—'}</td>
+                    <td>
+                      {row.role==='owner'?(
+                        <span className="ownerlocked"><ShieldCheck size={14}/> Protected</span>
+                      ):(
+                        <button className="useraction-btn" disabled={savingId===row.id} onClick={()=>changeStatus(row,!row.is_active)}>
+                          {row.is_active?<><UserX size={14}/> Disable</>:<><UserCheck size={14}/> Activate</>}
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="sectionheading">
+            <div><p className="eyebrow">PRIVATE CUSTOMER ACCESS</p><h3><Link2 size={18}/> Link portal accounts</h3></div>
+            <span className="count">{links.length} eligible accounts</span>
+          </div>
+          <p className="muted">Choose the customer record for each Farmer, Company or Supplier login. The portal exposes transactions matching that linked customer name only.</p>
+          {linkError&&<div className="alert">{linkError}</div>}
+          <div className="tablecard">
+            <table>
+              <thead><tr><th>Portal account</th><th>Role</th><th>Linked customer record</th></tr></thead>
+              <tbody>
+                {links.map(row=>(
+                  <tr key={row.user_id}>
+                    <td><b>{row.user_name}</b><span className="subcell">{row.email}</span></td>
+                    <td>{row.role}</td>
+                    <td>
+                      <select value={row.party_id||''} className="userrole-select" disabled={savingId===row.user_id} onChange={e=>linkParty(row,e.target.value)}>
+                        <option value="">Not linked</option>
+                        {parties.filter(p=>['farmer','company','supplier','both'].includes(p.kind)).map(p=><option key={p.id} value={p.id}>{p.name} · {p.kind}</option>)}
+                      </select>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {!links.length&&<div className="empty">Create Farmer, Company or Supplier logins; they will appear here.</div>}
+          </div>
+          <div className="sectionheading">
+            <div><p className="eyebrow">SECURITY HISTORY</p><h3><Clock3 size={18}/> Recent audit events</h3></div>
+          </div>
+          <div className="tablecard">
+            <table>
+              <thead><tr><th>Time</th><th>Action</th><th>Record</th><th>Details</th></tr></thead>
+              <tbody>
+                {audit.map(r=>(
+                  <tr key={r.id}>
+                    <td>{r.created_at?new Date(r.created_at).toLocaleString('en-IN'):'—'}</td>
+                    <td>{r.action}</td>
+                    <td>{r.entity} {r.entity_id||''}</td>
+                    <td>{r.details}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {!audit.length&&<div className="empty">Admin actions will appear here.</div>}
+          </div>
+          <p className="footnote">Account security: role changes and account status changes are enforced server-side. For public hosting, use HTTPS, a strong JWT secret, automated DB backups, and security testing.</p>
+        </>
+      )}
+      {user.role!=='owner'&&<div className="alert">Only the owner account can manage people, portal links, or email reports.</div>}
+    </>
+  );
+}
+
+function Portal({user,data,logout,error,refresh,downloadReceipt,shareReceipt}){
+  if(!data)return <div className="authpage"><div className="authform"><LoaderCircle className="spin"/> Loading customer portal…</div></div>;
+  if(user.role==='worker') {
+    return (
+      <main className="portal portalwide">
+        <div className="portalhead">
+          <div className="brandmark"><Wheat/></div>
+          <div><p className="eyebrow">DLFR WORKER PORTAL</p><h1>Hello, {user.name}</h1><p>View your linked attendance and wage payment records.</p></div>
+          <button className="btn secondary" onClick={logout}><LogOut size={16}/> Sign out</button>
+        </div>
+        {error&&<div className="alert">{error}</div>}
+        {!data.linked?<div className="alert">{data.message}</div>:(
+          <>
+            <div className="metricgrid">
+              <Metric label="Daily wage" value={money(data.worker.daily_wage)} icon={Wallet} tone="amber"/>
+              <Metric label="Wages earned" value={money(data.total_wages_earned)} icon={FileText} tone="blue"/>
+              <Metric label="Wages paid" value={money(data.total_wages_paid)} icon={BadgeIndianRupee} tone="green"/>
+              <Metric label="Wage balance" value={money(data.wages_balance)} icon={Wallet} tone="rose"/>
+              <Metric label="Attendance units" value={data.attendance_units||'0'} icon={ClipboardCheck} tone="amber"/>
+            </div>
+            <div className="sectionheading"><h3>Attendance</h3></div>
+            <div className="tablecard">
+              <table>
+                <thead><tr><th>Date</th><th>Status</th><th>Overtime hours</th></tr></thead>
+                <tbody>{data.attendance.map((a,i)=><tr key={i}><td>{a.date}</td><td>{a.status}</td><td>{a.overtime_hours}</td></tr>)}</tbody>
+              </table>
+              {!data.attendance.length&&<div className="empty">No attendance records assigned yet.</div>}
+            </div>
+            <div className="sectionheading"><h3>Wage payments</h3></div>
+            <div className="tablecard">
+              <table>
+                <thead><tr><th>Payment date</th><th>Period</th><th>Amount</th><th>Method</th></tr></thead>
+                <tbody>{data.wage_payments.map((p,i)=><tr key={i}><td>{p.date}</td><td>{p.period_month}</td><td>{money(p.amount)}</td><td>{p.method}</td></tr>)}</tbody>
+              </table>
+            </div>
+          </>
+        )}
+        <button className="btn secondary" onClick={refresh}><RefreshCw size={16}/> Refresh records</button>
+      </main>
+    );
+  }
+
+  return (
+    <main className="portal portalwide">
+      <div className="portalhead">
+        <div className="brandmark"><Wheat/></div>
+        <div><p className="eyebrow">DLFR CUSTOMER PORTAL · {user.role.toUpperCase()}</p><h1>Welcome, {user.name}</h1><p>View only the business records DLFR linked to your account.</p></div>
+        <button className="btn secondary" onClick={logout}><LogOut size={16}/> Sign out</button>
+      </div>
+      {error&&<div className="alert">{error}</div>}
+      {!data.linked?<div className="alert">{data.message||'Your account is not linked yet.'}</div>:(
+        <>
+          <div className="metricgrid">
+            <Metric label="Purchased by DLFR" value={money(data.purchase_total)} icon={ArrowDownToLine} tone="amber"/>
+            <Metric label="Sold to you" value={money(data.sale_total)} icon={ArrowUpFromLine} tone="blue"/>
+            <Metric label="Purchase payment total" value={money(data.purchase_paid)} icon={Wallet} tone="green"/>
+            <Metric label="Sales paid total" value={money(data.sale_paid)} icon={BadgeIndianRupee} tone="rose"/>
+            <Metric label="Purchase balance" value={money(data.purchase_balance)} icon={FileText} tone="amber"/>
+            <Metric label="Sales balance" value={money(data.sale_balance)} icon={Wallet} tone="blue"/>
+          </div>
+          <div className="sectionheading"><h3>Your purchases & sales</h3><span className="count">{data.transactions.length} bills</span></div>
+          <TransactionTable rows={data.transactions} onReceipt={id=>downloadReceipt(id,true)} onShare={row=>shareReceipt(row,true)}/>
+          <div className="sectionheading"><h3>Your payment records</h3><span className="count">{data.payments.length} payments</span></div>
+          <div className="tablecard">
+            <table>
+              <thead><tr><th>Date</th><th>Invoice ID</th><th>Amount</th><th>Method</th><th>Reference</th></tr></thead>
+              <tbody>{data.payments.map(p=><tr key={p.id}><td>{p.date}</td><td>{p.transaction_id}</td><td>{money(p.amount)}</td><td>{p.method}</td><td>{p.reference}</td></tr>)}</tbody>
+            </table>
+            {!data.payments.length&&<div className="empty">No separate payment ledger entries yet. Older bills may show a paid amount without a detailed ledger.</div>}
+          </div>
+        </>
+      )}
+      <button className="btn secondary" onClick={refresh}><RefreshCw size={16}/> Refresh records</button>
+      <p className="footnote">For corrections or missing records, contact DLFR. Do not share your portal login with others.</p>
+    </main>
+  );
+}
+
+function downloadJSON(data,name){
+  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+  downloadBlob(blob,name);
+}
+
+function downloadCSV(rows,name){
+  if(!rows.length){alert('No transaction rows to export for this date range.');return}
+  const headers=Object.keys(rows[0]);
+  const quote=v=>`"${String(v??'').replaceAll('"','""')}"`;
+  const csv=[headers.join(','),...rows.map(r=>headers.map(k=>quote(r[k])).join(','))].join('\r\n');
+  downloadBlob(new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'}),name);
+}
+
+function downloadBlob(blob,name){
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;
+  a.download=name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+
 createRoot(document.getElementById('root')).render(<App/>);

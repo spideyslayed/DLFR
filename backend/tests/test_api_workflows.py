@@ -104,3 +104,13 @@ def test_worker_attendance_calculates_payroll(dlfr_client):
     payroll = client.get("/api/payroll?month=2026-10", headers=owner_headers)
     assert payroll.status_code == 200, payroll.text
     assert Decimal(payroll.json()["total_earned"]) == Decimal("250.00")
+
+def test_public_purchase_prices(dlfr_client):
+    client, _, _ = dlfr_client
+    # Public endpoint should be reachable without auth headers
+    res = client.get("/api/public/purchase-prices")
+    assert res.status_code == 200
+    data = res.json()
+    assert "prices" in data
+    assert "date" in data
+    

@@ -192,6 +192,81 @@ def send_scheduled_monthly_report():
 @app.get("/api/health")
 def health():
     return {"ok": True, "service": "DLFR API", "version": "1.0.0"}
+@app.get("/api/public/purchase-prices")
+def public_purchase_prices(db: Session = Depends(get_db)):
+    """Public, anonymized summary of DLFR purchase rates for farmers and buyers."""
+    kolkata_tz = ZoneInfo("Asia/Kolkata")
+    now_kolkata = datetime.now(kolkata_tz)
+    yesterday = (now_kolkata - timedelta(days=1)).date()
+
+    # Find the target date: yesterday, or the most recent purchase date if yesterday had no trading
+    target_date = db.scalar(
+        select(Transaction.date)
+        .where(Transaction.kind == "purchase", Transaction.date <= yesterday)
+        .order_by(Transaction.date.desc())
+        .limit(1)
+    )
+
+    if not target_date:
+        return {
+            "date": str(yesterday),
+            "is_fallback": False,
+            "prices": [],
+            "message": "No historical purchase transactions recorded yet.",
+        }
+
+    # Query purchases on the target date
+    records = db.scalars(
+        select(Transaction).where(
+            Transaction.kind == "purchase",
+            Transaction.date == target_date,
+        )
+    ).all()
+
+    # Aggregate by crop
+    grouped: dict[str, dict] = {}
+    for tx in records:
+        crop = tx.crop.strip().title()
+        qty = Decimal(str(tx.quantity_qtl))
+        rate = Decimal(str(tx.rate))
+        total_val = qty * rate
+
+        if crop not in grouped:
+            grouped[crop] = {
+                "crop": crop,
+                "total_qtl": Decimal("0"),
+                "total_val": Decimal("0"),
+                "min_rate": rate,
+                "max_rate": rate,
+            }
+        g = grouped[crop]
+        g["total_qtl"] += qty
+        g["total_val"] += total_val
+        if rate < g["min_rate"]:
+            g["min_rate"] = rate
+        if rate > g["max_rate"]:
+            g["max_rate"] = rate
+
+    prices = []
+    for g in grouped.values():
+        weighted_avg = (
+            (g["total_val"] / g["total_qtl"]).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            if g["total_qtl"] > 0
+            else Decimal("0.00")
+        )
+        prices.append({
+            "crop": g["crop"],
+            "total_quantity_qtl": float(g["total_qtl"]),
+            "weighted_avg_rate": float(weighted_avg),
+            "min_rate": float(g["min_rate"]),
+            "max_rate": float(g["max_rate"]),
+        })
+
+    return {
+        "date": str(target_date),
+        "is_fallback": target_date != yesterday,
+        "prices": sorted(prices, key=lambda x: x["crop"]),
+    }
 
 @app.post("/api/auth/register", response_model=dict)
 def register(payload: RegisterIn, db: Session = Depends(get_db)):
